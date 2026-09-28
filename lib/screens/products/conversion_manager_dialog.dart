@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'app_styles.dart';
 import 'conversion_manager.dart';
 import 'units_manager.dart';
+import '../../widgets/draggable_dialog.dart';
 
 class ConversionManagerDialog extends StatefulWidget {
   final ConversionManager conversionManager;
@@ -371,22 +372,14 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.swap_horiz, color: AppStyles.primaryColor),
-            const SizedBox(width: AppStyles.spacingSm),
-            const Text(
-              'إدارة التحويلات',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: AppStyles.dialogWidthLg,
+      child: DraggableDialog(
+        title: 'إدارة التحويلات',
+        width: AppStyles.dialogWidthLg,
+        height: 700,
+        child: Padding(
+          padding: const EdgeInsets.all(AppStyles.spacingLg),
           child: SingleChildScrollView(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
@@ -581,19 +574,6 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
               ],
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.grey.shade700,
-            ),
-            child: const Text('إغلاق'),
-          ),
-        ],
-        actionsPadding: const EdgeInsets.all(AppStyles.spacingLg),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppStyles.radiusLg),
         ),
       ),
     );

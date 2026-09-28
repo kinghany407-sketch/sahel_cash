@@ -51,7 +51,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       newPath,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -126,6 +126,20 @@ total REAL NOT NULL,
 isWholesale INTEGER NOT NULL DEFAULT 0,
 FOREIGN KEY (invoiceId) REFERENCES invoices(id),
 FOREIGN KEY (productId) REFERENCES products(id)
+)
+''');
+
+    await db.execute('''
+CREATE TABLE customers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT,
+  address TEXT,
+  initialBalance REAL DEFAULT 0,
+  currentBalance REAL DEFAULT 0,
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
 )
 ''');
   }
@@ -214,6 +228,22 @@ total REAL NOT NULL,
 isWholesale INTEGER NOT NULL DEFAULT 0,
 FOREIGN KEY (invoiceId) REFERENCES invoices(id),
 FOREIGN KEY (productId) REFERENCES products(id)
+)
+''');
+    }
+
+    if (oldVersion < 9) {
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS customers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT,
+  address TEXT,
+  initialBalance REAL DEFAULT 0,
+  currentBalance REAL DEFAULT 0,
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
 )
 ''');
     }
@@ -376,5 +406,82 @@ FOREIGN KEY (productId) REFERENCES products(id)
     final db = await database;
 
     return await db.delete('product_sale_units', where: 'productId = ?', whereArgs: [productId]);
+  }
+
+  // Customer CRUD operations
+
+  Future<int> insertCustomer(Map<String, dynamic> customer) async {
+    final db = await database;
+
+    return await db.insert(
+      'customers',
+      customer,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getCustomers() async {
+    final db = await database;
+
+    return await db.query(
+      'customers',
+      orderBy: 'name ASC',
+    );
+  }
+
+  Future<Map<String, dynamic>?> getCustomerById(int id) async {
+    final db = await database;
+
+    final List<Map<String, dynamic>> maps = await db.query(
+      'customers',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (maps.isEmpty) return null;
+    return maps.first;
+  }
+
+  Future<List<Map<String, dynamic>>> searchCustomers(String query) async {
+    final db = await database;
+
+    final normalizedQuery = '%${query.toLowerCase()}%';
+
+    return await db.query(
+      'customers',
+      where: '''
+        LOWER(name) LIKE ? 
+        OR LOWER(phone) LIKE ?
+      ''',
+      whereArgs: [normalizedQuery, normalizedQuery],
+      orderBy: 'name ASC',
+    );
+  }
+
+  Future<int> updateCustomer(Map<String, dynamic> customer) async {
+    final db = await database;
+
+    return await db.update(
+      'customers',
+      customer,
+      where: 'id = ?',
+      whereArgs: [customer['id']],
+    );
+  }
+
+  Future<int> deleteCustomer(int id) async {
+    final db = await database;
+
+    return await db.delete('customers', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> updateCustomerBalance(int customerId, double amount) async {
+    final db = await database;
+
+    return await db.rawUpdate(
+      'UPDATE customers SET currentBalance = currentBalance + ?, updatedAt = ? WHERE id = ?',
+      [amount, DateTime.now().toIso8601String(), customerId],
+    );
   }
 }

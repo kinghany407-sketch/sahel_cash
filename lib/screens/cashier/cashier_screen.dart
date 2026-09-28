@@ -2051,8 +2051,8 @@ class _CashierScreenState extends State<CashierScreen> {
                   borderRadius: BorderRadius.circular(4),
                   child: Image.file(
                     File(item.product.imagePath),
-                    width: 40,
-                    height: 40,
+                    width: 36,
+                    height: 36,
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) => Icon(
                       Icons.inventory_2,
@@ -2066,9 +2066,10 @@ class _CashierScreenState extends State<CashierScreen> {
                   size: 20,
                   color: AppStyles.primaryColor.withValues(alpha: 0.5),
                 ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 1),
           // Product info
           Expanded(
+            flex: 2,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2087,20 +2088,23 @@ class _CashierScreenState extends State<CashierScreen> {
                     fontSize: 11,
                     color: Colors.grey.shade600,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
           // Quantity controls
-          Flexible(
+          SizedBox(
+            width: 80,
             child: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.remove, size: 14),
+                  icon: const Icon(Icons.remove, size: 12),
                   onPressed: () => _decreaseQuantity(item),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                   visualDensity: VisualDensity.compact,
                 ),
                 Text(
@@ -2108,24 +2112,26 @@ class _CashierScreenState extends State<CashierScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                    fontSize: 12,
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.add, size: 14),
+                  icon: const Icon(Icons.add, size: 12),
                   onPressed: () => _increaseQuantity(item),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                   visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 1),
           // Item total
-          Flexible(
+          SizedBox(
+            width: 55,
             child: Text(
               item.total.toStringAsFixed(2),
+              textAlign: TextAlign.center,
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
@@ -2135,13 +2141,17 @@ class _CashierScreenState extends State<CashierScreen> {
               maxLines: 1,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 1),
           // Remove button
-          IconButton(
-            icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-            onPressed: () => _removeFromCart(item),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
+          SizedBox(
+            width: 50,
+            child: IconButton(
+              icon: const Icon(Icons.delete, size: 14, color: Colors.red),
+              onPressed: () => _removeFromCart(item),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+              visualDensity: VisualDensity.compact,
+            ),
           ),
         ],
       ),

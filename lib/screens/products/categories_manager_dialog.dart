@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_styles.dart';
 import 'categories_manager.dart';
+import '../../widgets/draggable_dialog.dart';
 
 class CategoriesManagerDialog extends StatefulWidget {
   final CategoriesManager categoriesManager;
@@ -102,21 +103,13 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.category, color: AppStyles.primaryColor),
-            const SizedBox(width: AppStyles.spacingSm),
-            const Text(
-              'إدارة الفئات',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: AppStyles.dialogWidthSm,
+      child: DraggableDialog(
+        title: 'إدارة الفئات',
+        width: AppStyles.dialogWidthSm,
+        height: 600,
+        child: Padding(
+          padding: const EdgeInsets.all(AppStyles.spacingLg),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: _controller,
@@ -183,8 +176,7 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
                 ),
               ),
               const SizedBox(height: AppStyles.spacingSm),
-              SizedBox(
-                height: 280,
+              Expanded(
                 child: SingleChildScrollView(
                   child: Wrap(
                     spacing: AppStyles.spacingSm,
@@ -254,19 +246,6 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.grey.shade700,
-            ),
-            child: const Text('إغلاق'),
-          ),
-        ],
-        actionsPadding: const EdgeInsets.all(AppStyles.spacingLg),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppStyles.radiusLg),
         ),
       ),
     );

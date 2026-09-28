@@ -132,9 +132,8 @@ class _DraggableDialogState extends State<DraggableDialog> {
         final left = math.max(0.0, (constraints.maxWidth - dialogWidth) / 2 + clampedOffset.dx);
         final top = math.max(0.0, (constraints.maxHeight - dialogHeight) / 2 + clampedOffset.dy);
 
-        final hasTitle = widget.title != null && widget.title!.trim().isNotEmpty;
         final headerContent = Container(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: hasTitle ? 12 : 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.grey.shade100,
             borderRadius: const BorderRadius.only(
@@ -143,21 +142,36 @@ class _DraggableDialogState extends State<DraggableDialog> {
             ),
           ),
           child: Row(
-            mainAxisAlignment: hasTitle ? MainAxisAlignment.start : MainAxisAlignment.center,
             children: [
-              const Icon(Icons.drag_handle, color: Colors.grey),
-              if (hasTitle) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    widget.title!,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+              // Back Arrow (RTL: on the right)
+              IconButton(
+                icon: const Icon(Icons.arrow_back, size: 20),
+                onPressed: () => Navigator.of(context).pop(),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                splashRadius: 20,
+              ),
+              const SizedBox(width: 8),
+              // Title (centered)
+              Expanded(
+                child: Text(
+                  widget.title ?? '',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-              ],
+              ),
+              const SizedBox(width: 8),
+              // Close icon (RTL: on the left)
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () => Navigator.of(context).pop(),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                splashRadius: 20,
+              ),
             ],
           ),
         );

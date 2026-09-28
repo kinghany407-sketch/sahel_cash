@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_styles.dart';
 import 'units_manager.dart';
+import '../../widgets/draggable_dialog.dart';
 
 class UnitsManagerDialog extends StatefulWidget {
   final UnitsManager unitsManager;
@@ -101,21 +102,13 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.straighten, color: AppStyles.primaryColor),
-            const SizedBox(width: AppStyles.spacingSm),
-            const Text(
-              'إدارة الوحدات',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: AppStyles.dialogWidthSm,
+      child: DraggableDialog(
+        title: 'إدارة الوحدات',
+        width: AppStyles.dialogWidthSm,
+        height: 600,
+        child: Padding(
+          padding: const EdgeInsets.all(AppStyles.spacingLg),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: _controller,
@@ -180,8 +173,7 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
                 ),
               ),
               const SizedBox(height: AppStyles.spacingSm),
-              SizedBox(
-                height: 280,
+              Expanded(
                 child: SingleChildScrollView(
                   child: Wrap(
                     spacing: AppStyles.spacingSm,
@@ -251,19 +243,6 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.grey.shade700,
-            ),
-            child: const Text('إغلاق'),
-          ),
-        ],
-        actionsPadding: const EdgeInsets.all(AppStyles.spacingLg),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppStyles.radiusLg),
         ),
       ),
     );
