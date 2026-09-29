@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../screens/cashier/cashier_screen.dart';
+import '../screens/customers/customers_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/inventory/inventory_screen.dart';
 import '../screens/invoices/invoices_screen.dart';
@@ -290,7 +291,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       case DesktopPage.inventory:
         return const InventoryScreen();
       case DesktopPage.customers:
-        return const _PlaceholderScreen(title: 'العملاء');
+        return const CustomersScreen();
       case DesktopPage.suppliers:
         return const _PlaceholderScreen(title: 'الموردون');
       case DesktopPage.profits:
