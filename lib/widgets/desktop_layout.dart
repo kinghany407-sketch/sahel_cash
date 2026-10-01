@@ -5,6 +5,7 @@ import '../screens/home/home_screen.dart';
 import '../screens/inventory/inventory_screen.dart';
 import '../screens/invoices/invoices_screen.dart';
 import '../screens/products/products_screen.dart';
+import '../screens/purchases/purchase_invoices_list_screen.dart';
 import '../screens/suppliers/suppliers_screen.dart';
 
 enum DesktopPage {
@@ -14,6 +15,7 @@ enum DesktopPage {
   inventory,
   customers,
   suppliers,
+  purchaseInvoices,
   profits,
   expenses,
   reports,
@@ -24,10 +26,7 @@ enum DesktopPage {
 class DesktopLayout extends StatefulWidget {
   final DesktopPage initialPage;
 
-  const DesktopLayout({
-    super.key,
-    this.initialPage = DesktopPage.home,
-  });
+  const DesktopLayout({super.key, this.initialPage = DesktopPage.home});
 
   @override
   State<DesktopLayout> createState() => _DesktopLayoutState();
@@ -62,9 +61,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       body: Row(
         children: [
           // Main content area
-          Expanded(
-            child: _buildCurrentPage(),
-          ),
+          Expanded(child: _buildCurrentPage()),
           // Right sidebar (RTL)
           _buildSidebar(),
         ],
@@ -74,7 +71,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
 
   Widget _buildSidebar() {
     final sidebarWidth = _isSidebarExpanded ? 230.0 : 70.0;
-    
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -94,9 +91,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
           // App title
           Container(
             padding: EdgeInsets.all(_isSidebarExpanded ? 20 : 12),
-            decoration: BoxDecoration(
-              color: Colors.indigo,
-            ),
+            decoration: BoxDecoration(color: Colors.indigo),
             child: _isSidebarExpanded
                 ? const Column(
                     children: [
@@ -111,18 +106,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                       SizedBox(height: 4),
                       Text(
                         'نظام إدارة النقاط البيع',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                     ],
                   )
-                : const Icon(
-                    Icons.store,
-                    color: Colors.white,
-                    size: 32,
-                  ),
+                : const Icon(Icons.store, color: Colors.white, size: 32),
           ),
           const SizedBox(height: 10),
           // Navigation items
@@ -159,6 +147,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                   icon: Icons.local_shipping,
                   title: 'الموردون',
                   page: DesktopPage.suppliers,
+                ),
+                _buildNavItem(
+                  icon: Icons.shopping_bag,
+                  title: 'فواتير الشراء',
+                  page: DesktopPage.purchaseInvoices,
                 ),
                 _buildNavItem(
                   icon: Icons.attach_money,
@@ -203,7 +196,9 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    _isSidebarExpanded ? Icons.chevron_right : Icons.chevron_left,
+                    _isSidebarExpanded
+                        ? Icons.chevron_right
+                        : Icons.chevron_left,
                     color: Colors.indigo,
                     size: 24,
                   ),
@@ -264,8 +259,12 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         title,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                          color: isSelected ? Colors.indigo : Colors.grey.shade700,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          color: isSelected
+                              ? Colors.indigo
+                              : Colors.grey.shade700,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -295,6 +294,8 @@ class _DesktopLayoutState extends State<DesktopLayout> {
         return const CustomersScreen();
       case DesktopPage.suppliers:
         return const SuppliersScreen();
+      case DesktopPage.purchaseInvoices:
+        return const PurchaseInvoicesListScreen();
       case DesktopPage.profits:
         return const _PlaceholderScreen(title: 'الأرباح');
       case DesktopPage.expenses:
@@ -320,11 +321,7 @@ class _PlaceholderScreen extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.construction,
-            size: 80,
-            color: Colors.grey.shade400,
-          ),
+          Icon(Icons.construction, size: 80, color: Colors.grey.shade400),
           const SizedBox(height: 20),
           Text(
             title,
@@ -337,10 +334,7 @@ class _PlaceholderScreen extends StatelessWidget {
           const SizedBox(height: 10),
           const Text(
             'قيد التطوير',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey,
-            ),
+            style: TextStyle(fontSize: 18, color: Colors.grey),
           ),
         ],
       ),

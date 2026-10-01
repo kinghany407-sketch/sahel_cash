@@ -26,7 +26,7 @@ class DatabaseHelper {
     // Use application documents directory for permanent storage
     final appDocDir = await getApplicationDocumentsDirectory();
     final newPath = join(appDocDir.path, 'sahel_cash.db');
-    
+
     // Old path (inside .dart_tool - not safe)
     final oldPath = join(
       Directory.current.path,
@@ -35,11 +35,11 @@ class DatabaseHelper {
       'databases',
       'sahel_cash.db',
     );
-    
+
     // Check if old database exists and migrate it
     final oldFile = File(oldPath);
     final newFile = File(newPath);
-    
+
     if (await oldFile.exists() && !await newFile.exists()) {
       // Copy old database to new permanent location
       try {
@@ -51,7 +51,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       newPath,
-      version: 10,
+      version: 11,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -154,6 +154,36 @@ CREATE TABLE suppliers(
   notes TEXT,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
+)
+''');
+
+    await db.execute('''
+CREATE TABLE purchase_invoices(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoiceNumber TEXT NOT NULL UNIQUE,
+  supplierId INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  subtotal REAL DEFAULT 0,
+  discount REAL DEFAULT 0,
+  totalAmount REAL DEFAULT 0,
+  paymentType TEXT NOT NULL,
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  FOREIGN KEY (supplierId) REFERENCES suppliers(id)
+)
+''');
+
+    await db.execute('''
+CREATE TABLE purchase_invoice_items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoiceId INTEGER NOT NULL,
+  productId INTEGER NOT NULL,
+  quantity REAL NOT NULL DEFAULT 0,
+  unitPrice REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL DEFAULT 0,
+  FOREIGN KEY (invoiceId) REFERENCES purchase_invoices(id),
+  FOREIGN KEY (productId) REFERENCES products(id)
 )
 ''');
   }
@@ -277,6 +307,38 @@ CREATE TABLE IF NOT EXISTS suppliers(
 )
 ''');
     }
+
+    if (oldVersion < 11) {
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS purchase_invoices(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoiceNumber TEXT NOT NULL UNIQUE,
+  supplierId INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  subtotal REAL DEFAULT 0,
+  discount REAL DEFAULT 0,
+  totalAmount REAL DEFAULT 0,
+  paymentType TEXT NOT NULL,
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  FOREIGN KEY (supplierId) REFERENCES suppliers(id)
+)
+''');
+
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS purchase_invoice_items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoiceId INTEGER NOT NULL,
+  productId INTEGER NOT NULL,
+  quantity REAL NOT NULL DEFAULT 0,
+  unitPrice REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL DEFAULT 0,
+  FOREIGN KEY (invoiceId) REFERENCES purchase_invoices(id),
+  FOREIGN KEY (productId) REFERENCES products(id)
+)
+''');
+    }
   }
 
   Future<int> insertProduct(Product product) async {
@@ -375,18 +437,18 @@ CREATE TABLE IF NOT EXISTS suppliers(
   Future<String> backupDatabase() async {
     final appDocDir = await getApplicationDocumentsDirectory();
     final dbPath = join(appDocDir.path, 'sahel_cash.db');
-    
+
     final sourceFile = File(dbPath);
     if (!await sourceFile.exists()) {
       throw Exception('Database file not found');
     }
-    
+
     // Create backup with timestamp
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final backupPath = join(appDocDir.path, 'sahel_cash_backup_$timestamp.db');
-    
+
     await sourceFile.copy(backupPath);
-    
+
     return backupPath;
   }
 
@@ -412,7 +474,10 @@ CREATE TABLE IF NOT EXISTS suppliers(
       orderBy: 'id ASC',
     );
 
-    return List.generate(maps.length, (index) => ProductSaleUnit.fromMap(maps[index]));
+    return List.generate(
+      maps.length,
+      (index) => ProductSaleUnit.fromMap(maps[index]),
+    );
   }
 
   Future<int> updateSaleUnit(ProductSaleUnit saleUnit) async {
@@ -429,13 +494,21 @@ CREATE TABLE IF NOT EXISTS suppliers(
   Future<int> deleteSaleUnit(int id) async {
     final db = await database;
 
-    return await db.delete('product_sale_units', where: 'id = ?', whereArgs: [id]);
+    return await db.delete(
+      'product_sale_units',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<int> deleteSaleUnitsByProductId(int productId) async {
     final db = await database;
 
-    return await db.delete('product_sale_units', where: 'productId = ?', whereArgs: [productId]);
+    return await db.delete(
+      'product_sale_units',
+      where: 'productId = ?',
+      whereArgs: [productId],
+    );
   }
 
   // Customer CRUD operations
@@ -453,10 +526,7 @@ CREATE TABLE IF NOT EXISTS suppliers(
   Future<List<Map<String, dynamic>>> getCustomers() async {
     final db = await database;
 
-    return await db.query(
-      'customers',
-      orderBy: 'name ASC',
-    );
+    return await db.query('customers', orderBy: 'name ASC');
   }
 
   Future<Map<String, dynamic>?> getCustomerById(int id) async {
@@ -573,5 +643,165 @@ CREATE TABLE IF NOT EXISTS suppliers(
     final db = await database;
 
     return await db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<String> getNextPurchaseInvoiceNumber() async {
+    final db = await database;
+    final result = await db.rawQuery('''
+SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'purchase_invoices'), 0) + 1 AS nextNumber
+''');
+    final nextNumber = (result.first['nextNumber'] as int?) ?? 1;
+    return 'PUR-${nextNumber.toString().padLeft(4, '0')}';
+  }
+
+  Future<int> createPurchaseInvoice(
+    Map<String, dynamic> invoice,
+    List<Map<String, dynamic>> items,
+  ) async {
+    final db = await database;
+
+    return db.transaction((txn) async {
+      final sequenceResult = await txn.rawQuery('''
+SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'purchase_invoices'), 0) + 1 AS nextNumber
+''');
+      final nextNumber = (sequenceResult.first['nextNumber'] as int?) ?? 1;
+      final invoiceNumber = 'PUR-${nextNumber.toString().padLeft(4, '0')}';
+      final invoiceId = await txn.insert('purchase_invoices', {
+        ...invoice,
+        'invoiceNumber': invoiceNumber,
+      });
+
+      for (final item in items) {
+        await txn.insert('purchase_invoice_items', {
+          ...item,
+          'invoiceId': invoiceId,
+        });
+        final changedProducts = await txn.rawUpdate(
+          'UPDATE products SET quantity = COALESCE(quantity, 0) + ? WHERE id = ?',
+          [item['quantity'], item['productId']],
+        );
+        if (changedProducts == 0) {
+          throw StateError('Product ${item['productId']} not found');
+        }
+      }
+
+      if (invoice['paymentType'] == 'credit') {
+        final changedSuppliers = await txn.rawUpdate(
+          'UPDATE suppliers SET currentBalance = COALESCE(currentBalance, 0) + ?, updatedAt = ? WHERE id = ?',
+          [invoice['totalAmount'], invoice['updatedAt'], invoice['supplierId']],
+        );
+        if (changedSuppliers == 0) {
+          throw StateError('Supplier ${invoice['supplierId']} not found');
+        }
+      }
+
+      return invoiceId;
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPurchaseInvoices({
+    String? query,
+    int? supplierId,
+  }) async {
+    final db = await database;
+    final conditions = <String>[];
+    final arguments = <Object>[];
+
+    if (query != null && query.isNotEmpty) {
+      conditions.add(
+        '(LOWER(pi.invoiceNumber) LIKE ? OR LOWER(s.name) LIKE ?)',
+      );
+      final normalizedQuery = '%${query.toLowerCase()}%';
+      arguments
+        ..add(normalizedQuery)
+        ..add(normalizedQuery);
+    }
+    if (supplierId != null) {
+      conditions.add('pi.supplierId = ?');
+      arguments.add(supplierId);
+    }
+
+    final whereClause = conditions.isEmpty
+        ? ''
+        : 'WHERE ${conditions.join(' AND ')}';
+    return db.rawQuery('''
+SELECT pi.*, s.name AS supplierName
+FROM purchase_invoices pi
+LEFT JOIN suppliers s ON s.id = pi.supplierId
+$whereClause
+ORDER BY pi.id DESC
+''', arguments);
+  }
+
+  Future<Map<String, dynamic>?> getPurchaseInvoice(int id) async {
+    final db = await database;
+    final invoices = await db.rawQuery(
+      '''
+SELECT pi.*, s.name AS supplierName
+FROM purchase_invoices pi
+LEFT JOIN suppliers s ON s.id = pi.supplierId
+WHERE pi.id = ?
+LIMIT 1
+''',
+      [id],
+    );
+    if (invoices.isEmpty) return null;
+
+    final items = await db.rawQuery(
+      '''
+SELECT pii.*, p.name AS productName
+FROM purchase_invoice_items pii
+LEFT JOIN products p ON p.id = pii.productId
+WHERE pii.invoiceId = ?
+ORDER BY pii.id ASC
+''',
+      [id],
+    );
+    return {...invoices.first, 'items': items};
+  }
+
+  Future<int> deletePurchaseInvoice(int id) async {
+    final db = await database;
+
+    return db.transaction((txn) async {
+      final invoices = await txn.query(
+        'purchase_invoices',
+        where: 'id = ?',
+        whereArgs: [id],
+        limit: 1,
+      );
+      if (invoices.isEmpty) return 0;
+
+      final invoice = invoices.first;
+      final items = await txn.query(
+        'purchase_invoice_items',
+        where: 'invoiceId = ?',
+        whereArgs: [id],
+      );
+      for (final item in items) {
+        await txn.rawUpdate(
+          'UPDATE products SET quantity = COALESCE(quantity, 0) - ? WHERE id = ?',
+          [item['quantity'], item['productId']],
+        );
+      }
+
+      if (invoice['paymentType'] == 'credit') {
+        await txn.rawUpdate(
+          'UPDATE suppliers SET currentBalance = COALESCE(currentBalance, 0) - ?, updatedAt = ? WHERE id = ?',
+          [
+            invoice['totalAmount'],
+            DateTime.now().toIso8601String(),
+            invoice['supplierId'],
+          ],
+        );
+      }
+
+      await txn.delete(
+        'purchase_invoice_items',
+        where: 'invoiceId = ?',
+        whereArgs: [id],
+      );
+      return txn.delete('purchase_invoices', where: 'id = ?', whereArgs: [id]);
+    });
   }
 }

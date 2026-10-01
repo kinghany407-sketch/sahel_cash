@@ -4,6 +4,7 @@ import '../../models/supplier_model.dart';
 import '../../repositories/supplier_repository.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../products/app_styles.dart';
+import '../purchases/purchase_invoices_list_screen.dart';
 import 'add_supplier_dialog.dart';
 import 'supplier_statement_dialog.dart';
 
@@ -76,7 +77,9 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
     );
 
     if (savedSupplier == null || !mounted) return;
-    _showSuccess(supplier == null ? 'تم إضافة المورد بنجاح' : 'تم تحديث المورد بنجاح');
+    _showSuccess(
+      supplier == null ? 'تم إضافة المورد بنجاح' : 'تم تحديث المورد بنجاح',
+    );
     await _loadSuppliers();
   }
 
@@ -95,44 +98,47 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
       context: context,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: DraggableDialog(
-          title: 'تأكيد الحذف',
-          width: 420,
-          height: 240,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('هل تريد حذف المورد "${supplier.name}"؟'),
-                Row(
+      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+          Directionality(
+            textDirection: TextDirection.rtl,
+            child: DraggableDialog(
+              title: 'تأكيد الحذف',
+              width: 420,
+              height: 240,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(false),
-                        child: const Text('إلغاء'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(true),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppStyles.errorColor,
-                          foregroundColor: Colors.white,
+                    Text('هل تريد حذف المورد "${supplier.name}"؟'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(false),
+                            child: const Text('إلغاء'),
+                          ),
                         ),
-                        child: const Text('حذف'),
-                      ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(true),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppStyles.errorColor,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('حذف'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
     );
 
     if (confirmed != true) return;
@@ -189,12 +195,20 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.local_shipping, size: 28, color: AppStyles.primaryColor),
+                    const Icon(
+                      Icons.local_shipping,
+                      size: 28,
+                      color: AppStyles.primaryColor,
+                    ),
                     const SizedBox(width: 12),
                     const Expanded(
                       child: Text(
                         'الموردون',
-                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
                       ),
                     ),
                     SizedBox(
@@ -209,9 +223,15 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                           decoration: InputDecoration(
                             hintText: 'بحث عن مورد...',
                             hintStyle: TextStyle(color: Colors.grey.shade500),
-                            prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: Colors.grey,
+                            ),
                             border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
                           ),
                           onChanged: _searchSuppliers,
                         ),
@@ -224,8 +244,8 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : suppliers.isEmpty
-                        ? _buildEmptyState()
-                        : _buildSupplierList(),
+                    ? _buildEmptyState()
+                    : _buildSupplierList(),
               ),
             ],
           ),
@@ -244,11 +264,21 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.local_shipping_outlined, size: 80, color: Colors.grey.shade300),
+          Icon(
+            Icons.local_shipping_outlined,
+            size: 80,
+            color: Colors.grey.shade300,
+          ),
           const SizedBox(height: 16),
-          Text('لا يوجد موردون', style: TextStyle(fontSize: 20, color: Colors.grey.shade500)),
+          Text(
+            'لا يوجد موردون',
+            style: TextStyle(fontSize: 20, color: Colors.grey.shade500),
+          ),
           const SizedBox(height: 8),
-          Text('اضغط على + لإضافة مورد جديد', style: TextStyle(fontSize: 14, color: Colors.grey.shade400)),
+          Text(
+            'اضغط على + لإضافة مورد جديد',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
+          ),
         ],
       ),
     );
@@ -285,7 +315,11 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
               child: Center(
                 child: Text(
                   supplier.name.isNotEmpty ? supplier.name[0] : '?',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppStyles.primaryColor),
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppStyles.primaryColor,
+                  ),
                 ),
               ),
             ),
@@ -294,15 +328,31 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(supplier.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text(
+                    supplier.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   if (supplier.phone != null && supplier.phone!.isNotEmpty) ...[
                     const SizedBox(height: 4),
-                    Text(supplier.phone!, style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                    Text(
+                      supplier.phone!,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 4),
                   Text(
                     'الرصيد: ${supplier.currentBalance.toStringAsFixed(2)} ج.م',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: balanceColor),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: balanceColor,
+                    ),
                   ),
                 ],
               ),
@@ -310,6 +360,17 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                IconButton(
+                  icon: const Icon(Icons.shopping_bag_outlined, size: 20),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          PurchaseInvoicesListScreen(supplierId: supplier.id),
+                    ),
+                  ),
+                  tooltip: 'فواتير شراء المورد',
+                  color: AppStyles.primaryColor,
+                ),
                 IconButton(
                   icon: const Icon(Icons.receipt_long, size: 20),
                   onPressed: () => _showStatement(supplier),
