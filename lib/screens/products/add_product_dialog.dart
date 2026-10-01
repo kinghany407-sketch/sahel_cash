@@ -11,8 +11,6 @@ import 'access_control.dart';
 import 'app_styles.dart';
 import 'categories_manager.dart';
 import 'categories_manager_dialog.dart';
-import 'conversion_manager.dart';
-import 'conversion_manager_dialog.dart';
 import 'descriptions_manager.dart';
 import 'descriptions_manager_dialog.dart';
 import 'units_manager.dart';
@@ -52,7 +50,6 @@ class _AddProductDialogState extends State<AddProductDialog> {
 
   late final UnitsManager _unitsManager;
   late final CategoriesManager _categoriesManager;
-  late final ConversionManager _conversionManager;
   late final DescriptionsManager _descriptionsManager;
   final ProductRepository _productRepository = ProductRepository();
   final ImagePicker _imagePicker = ImagePicker();
@@ -77,7 +74,6 @@ class _AddProductDialogState extends State<AddProductDialog> {
     super.initState();
     _unitsManager = UnitsManager();
     _categoriesManager = CategoriesManager();
-    _conversionManager = ConversionManager();
     _descriptionsManager = DescriptionsManager();
 
     final product = widget.product;
@@ -93,7 +89,8 @@ class _AddProductDialogState extends State<AddProductDialog> {
       quantityController.text = product.quantity.toString();
       minQuantityController.text = product.minQuantity.toString();
       conversionFactorController.text = product.conversionFactor.toString();
-      unitsPerPurchaseUnitController.text = product.unitsPerPurchaseUnit.toString();
+      unitsPerPurchaseUnitController.text = product.unitsPerPurchaseUnit
+          .toString();
       imageController.text = product.imagePath;
       _selectedDescription = product.description.isEmpty
           ? null
@@ -184,8 +181,8 @@ class _AddProductDialogState extends State<AddProductDialog> {
       _selectedSaleUnit = fallbackUnit;
     }
 
-    _loadConversionFactor();
     _updateUnitsPerPurchaseUnit();
+    _loadConversionFactor();
   }
 
   void _updateUnitsPerPurchaseUnit({bool clearWhenDifferent = false}) {
@@ -204,26 +201,14 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 
   void _loadConversionFactor() {
-    final fromUnit = (_selectedPurchaseUnit ?? '').trim();
-    final toUnit = (_selectedSaleUnit ?? '').trim();
-    if (fromUnit.isEmpty || toUnit.isEmpty) {
+    final unitsPerPurchaseUnit = int.tryParse(
+      unitsPerPurchaseUnitController.text.trim(),
+    );
+    if (unitsPerPurchaseUnit == null || unitsPerPurchaseUnit <= 0) {
       conversionFactorController.clear();
       return;
     }
-
-    // conversionFactor remains the existing purchase-to-sale conversion.
-    if (fromUnit == toUnit) {
-      conversionFactorController.text = '1';
-      return;
-    }
-
-    // Search for saved conversion template only when units are different
-    final savedFactor = _conversionManager.findFactor(fromUnit, toUnit);
-    if (savedFactor != null) {
-      conversionFactorController.text = savedFactor.toString();
-    } else {
-      conversionFactorController.clear();
-    }
+    conversionFactorController.text = unitsPerPurchaseUnit.toString();
   }
 
   Future<void> _loadSaleUnits(int productId) async {
@@ -258,7 +243,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 
   void _showSaleUnitDialog({ProductSaleUnit? saleUnit}) {
-    final unitController = TextEditingController(text: saleUnit?.saleUnit ?? '');
+    final unitController = TextEditingController(
+      text: saleUnit?.saleUnit ?? '',
+    );
     final retailPriceController = TextEditingController(
       text: saleUnit?.retailPrice.toString() ?? '',
     );
@@ -280,7 +267,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 DropdownButtonFormField<String>(
-                  value: unitController.text.isEmpty ? null : unitController.text,
+                  value: unitController.text.isEmpty
+                      ? null
+                      : unitController.text,
                   decoration: const InputDecoration(
                     labelText: 'وحدة البيع',
                     prefixIcon: Icon(Icons.straighten),
@@ -355,7 +344,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 final retailPrice = double.tryParse(retailPriceController.text);
                 if (retailPrice == null || retailPrice <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('الرجاء إدخال سعر قطاعي صحيح')),
+                    const SnackBar(
+                      content: Text('الرجاء إدخال سعر قطاعي صحيح'),
+                    ),
                   );
                   return;
                 }
@@ -363,13 +354,17 @@ class _AddProductDialogState extends State<AddProductDialog> {
                 final conversion = double.tryParse(conversionController.text);
                 if (conversion == null || conversion <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('الرجاء إدخال معامل تحويل صحيح')),
+                    const SnackBar(
+                      content: Text('الرجاء إدخال معامل تحويل صحيح'),
+                    ),
                   );
                   return;
                 }
 
                 // Check for duplicate unit
-                if (_saleUnits.any((u) => u.saleUnit == unit && u.id != saleUnit?.id)) {
+                if (_saleUnits.any(
+                  (u) => u.saleUnit == unit && u.id != saleUnit?.id,
+                )) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('هذه الوحدة موجودة بالفعل')),
                   );
@@ -415,7 +410,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
         source: ImageSource.gallery,
         imageQuality: 80,
       );
-      
+
       if (image != null) {
         setState(() {
           _selectedImageFile = File(image.path);
@@ -510,11 +505,13 @@ class _AddProductDialogState extends State<AddProductDialog> {
         sellPrice: double.tryParse(sellPriceController.text) ?? 0,
         quantity: double.tryParse(quantityController.text) ?? 0,
         minQuantity: double.tryParse(minQuantityController.text) ?? 0,
-        conversionFactor: double.tryParse(conversionFactorController.text) ?? 1,
+        conversionFactor: widget.product?.conversionFactor ?? 1,
         storageUnit: _selectedStorageUnit ?? 'قطعة',
         purchaseUnit: _selectedPurchaseUnit ?? 'قطعة',
         saleUnit: _selectedSaleUnit ?? 'قطعة',
-        unitsPerPurchaseUnit: int.parse(unitsPerPurchaseUnitController.text.trim()),
+        unitsPerPurchaseUnit: int.parse(
+          unitsPerPurchaseUnitController.text.trim(),
+        ),
         description: _selectedDescription ?? '',
         imagePath: imageController.text.trim(),
       );
@@ -553,7 +550,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final canAccessAdvanced = ProductAccess.canAccessAdvancedSettings(widget.role);
+    final canAccessAdvanced = ProductAccess.canAccessAdvancedSettings(
+      widget.role,
+    );
     final screenWidth = MediaQuery.of(context).size.width;
     final dialogWidth = screenWidth < 600
         ? screenWidth - AppStyles.spacingXxl * 2
@@ -564,292 +563,219 @@ class _AddProductDialogState extends State<AddProductDialog> {
       child: DraggableDialog(
         controller: _dialogController,
         child: AlertDialog(
-        title: Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                width: double.infinity,
-                child: _dialogController.dragHandle(
-                  child: Row(
-                    children: [
-                      Icon(
-                        _isViewOnly
-                            ? Icons.visibility
-                            : (_isEditing
-                                  ? Icons.edit
-                                  : Icons.add_circle_outline),
-                        color: AppStyles.primaryColor,
-                      ),
-                      const SizedBox(width: AppStyles.spacingSm),
-                      Text(
-                        _isViewOnly
-                            ? 'عرض الصنف'
-                            : (_isEditing ? 'تعديل الصنف' : 'إضافة صنف جديد'),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: dialogWidth,
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  buildField(
-                    controller: nameController,
-                    label: 'اسم الصنف',
-                    icon: Icons.inventory_2,
-                  ),
-                  buildField(
-                    controller: brandController,
-                    label: 'العلامة التجارية',
-                    icon: Icons.business_center,
-                    required: false,
-                  ),
-                  buildDropdown(
-                    label: 'الفئة',
-                    value: _selectedCategory,
-                    items: _categoriesManager.categories,
-                    onChanged: (value) =>
-                        setState(() => _selectedCategory = value),
-                    icon: Icons.category,
-                    onManagePressed: () async {
-                      await showDialog(
-                        context: context,
-                        builder: (dialogContext) => CategoriesManagerDialog(
-                          categoriesManager: _categoriesManager,
-                        ),
-                      );
-                      if (mounted) {
-                        setState(() {
-                          _syncSelectedValues();
-                        });
-                      }
-                    },
-                  ),
-                  buildField(
-                    controller: skuController,
-                    label: 'SKU',
-                    icon: Icons.numbers,
-                    required: false,
-                  ),
-                  buildField(
-                    controller: barcodeController,
-                    label: 'الباركود',
-                    icon: Icons.qr_code,
-                    required: false,
-                  ),
-                  buildField(
-                    controller: sellPriceController,
-                    label: 'سعر البيع',
-                    icon: Icons.attach_money,
-                    keyboard: TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) => _validatePositiveNumber(value, 'سعر البيع'),
-                  ),
-                  buildField(
-                    controller: quantityController,
-                    label: 'الكمية الحالية',
-                    icon: Icons.production_quantity_limits,
-                    keyboard: TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) => _validateNonNegativeNumber(value, 'الكمية'),
-                  ),
-                  buildDropdown(
-                    label: 'وحدة البيع',
-                    value: _selectedSaleUnit,
-                    items: _unitsManager.availableUnits,
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedSaleUnit = value;
-                        _loadConversionFactor();
-                      });
-                    },
-                    icon: Icons.straighten,
-                    onManagePressed: () async {
-                      await showDialog(
-                        context: context,
-                        builder: (dialogContext) =>
-                            UnitsManagerDialog(unitsManager: _unitsManager),
-                      );
-                      if (mounted) {
-                        setState(() {
-                          _syncSelectedValues();
-                        });
-                      }
-                    },
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(AppStyles.spacingSm),
-                    decoration: BoxDecoration(
-                      color: AppStyles.primaryColor.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(AppStyles.radiusMd),
-                    ),
+          title: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _dialogController.dragHandle(
                     child: Row(
                       children: [
                         Icon(
-                          Icons.info_outline,
-                          size: AppStyles.iconSizeMd,
+                          _isViewOnly
+                              ? Icons.visibility
+                              : (_isEditing
+                                    ? Icons.edit
+                                    : Icons.add_circle_outline),
                           color: AppStyles.primaryColor,
                         ),
                         const SizedBox(width: AppStyles.spacingSm),
-                        Expanded(
-                          child: Text(
-                            'المخزون يُحفظ باستخدام وحدة التخزين',
-                            style: TextStyle(
-                              fontSize: AppStyles.fontSizeMd,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
+                        Text(
+                          _isViewOnly
+                              ? 'عرض الصنف'
+                              : (_isEditing ? 'تعديل الصنف' : 'إضافة صنف جديد'),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: AppStyles.spacingMd),
-                  ExpansionTile(
-                    title: Row(
-                      children: [
-                        const Icon(Icons.settings),
-                        const SizedBox(width: AppStyles.spacingSm),
-                        const Text('الإعدادات المتقدمة'),
-                      ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: dialogWidth,
+            child: Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    buildField(
+                      controller: nameController,
+                      label: 'اسم الصنف',
+                      icon: Icons.inventory_2,
                     ),
-                    initiallyExpanded: false,
-                    tilePadding: const EdgeInsets.symmetric(
-                      horizontal: AppStyles.spacingXs,
+                    buildField(
+                      controller: brandController,
+                      label: 'العلامة التجارية',
+                      icon: Icons.business_center,
+                      required: false,
                     ),
-                    childrenPadding: const EdgeInsets.only(
-                      top: AppStyles.spacingMd,
+                    buildDropdown(
+                      label: 'الفئة',
+                      value: _selectedCategory,
+                      items: _categoriesManager.categories,
+                      onChanged: (value) =>
+                          setState(() => _selectedCategory = value),
+                      icon: Icons.category,
+                      onManagePressed: () async {
+                        await showDialog(
+                          context: context,
+                          builder: (dialogContext) => CategoriesManagerDialog(
+                            categoriesManager: _categoriesManager,
+                          ),
+                        );
+                        if (mounted) {
+                          setState(() {
+                            _syncSelectedValues();
+                          });
+                        }
+                      },
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                    buildField(
+                      controller: skuController,
+                      label: 'SKU',
+                      icon: Icons.numbers,
+                      required: false,
                     ),
-                    children: canAccessAdvanced
-                        ? [
-                            buildField(
-                              controller: buyPriceController,
-                              label: 'سعر الشراء',
-                              icon: Icons.money,
-                              keyboard: TextInputType.numberWithOptions(
-                                decimal: true,
+                    buildField(
+                      controller: barcodeController,
+                      label: 'الباركود',
+                      icon: Icons.qr_code,
+                      required: false,
+                    ),
+                    buildField(
+                      controller: sellPriceController,
+                      label: 'سعر البيع',
+                      icon: Icons.attach_money,
+                      keyboard: TextInputType.numberWithOptions(decimal: true),
+                      validator: (value) =>
+                          _validatePositiveNumber(value, 'سعر البيع'),
+                    ),
+                    buildField(
+                      controller: quantityController,
+                      label: 'الكمية الحالية',
+                      icon: Icons.production_quantity_limits,
+                      keyboard: TextInputType.numberWithOptions(decimal: true),
+                      validator: (value) =>
+                          _validateNonNegativeNumber(value, 'الكمية'),
+                    ),
+                    buildDropdown(
+                      label: 'وحدة البيع',
+                      value: _selectedSaleUnit,
+                      items: _unitsManager.availableUnits,
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSaleUnit = value;
+                        });
+                      },
+                      icon: Icons.straighten,
+                      onManagePressed: () async {
+                        await showDialog(
+                          context: context,
+                          builder: (dialogContext) =>
+                              UnitsManagerDialog(unitsManager: _unitsManager),
+                        );
+                        if (mounted) {
+                          setState(() {
+                            _syncSelectedValues();
+                          });
+                        }
+                      },
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(AppStyles.spacingSm),
+                      decoration: BoxDecoration(
+                        color: AppStyles.primaryColor.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: AppStyles.iconSizeMd,
+                            color: AppStyles.primaryColor,
+                          ),
+                          const SizedBox(width: AppStyles.spacingSm),
+                          Expanded(
+                            child: Text(
+                              'المخزون يُحفظ باستخدام وحدة التخزين',
+                              style: TextStyle(
+                                fontSize: AppStyles.fontSizeMd,
+                                color: Colors.grey.shade700,
                               ),
-                              validator: (value) => _validatePositiveNumber(value, 'سعر الشراء'),
                             ),
-                            buildField(
-                              controller: minQuantityController,
-                              label: 'الحد الأدنى',
-                              icon: Icons.warning_amber_rounded,
-                              keyboard: TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              validator: (value) => _validateNonNegativeNumber(value, 'الحد الأدنى'),
-                            ),
-                            buildDropdown(
-                              label: 'وحدة التخزين',
-                              value: _selectedStorageUnit,
-                              items: _unitsManager.availableUnits,
-                              validator: _validateRequiredUnit,
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedStorageUnit = value;
-                                  _updateUnitsPerPurchaseUnit(
-                                    clearWhenDifferent: true,
-                                  );
-                                });
-                              },
-                              icon: Icons.inventory,
-                              onManagePressed: () async {
-                                await showDialog(
-                                  context: context,
-                                  builder: (dialogContext) =>
-                                      UnitsManagerDialog(
-                                        unitsManager: _unitsManager,
-                                      ),
-                                );
-                                if (mounted) {
-                                  setState(() {
-                                    _syncSelectedValues();
-                                  });
-                                }
-                              },
-                            ),
-                            buildDropdown(
-                              label: 'وحدة الشراء',
-                              value: _selectedPurchaseUnit,
-                              items: _unitsManager.availableUnits,
-                              validator: _validateRequiredUnit,
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedPurchaseUnit = value;
-                                  _updateUnitsPerPurchaseUnit(
-                                    clearWhenDifferent: true,
-                                  );
-                                  _loadConversionFactor();
-                                });
-                              },
-                              icon: Icons.shopping_cart,
-                              onManagePressed: () async {
-                                await showDialog(
-                                  context: context,
-                                  builder: (dialogContext) =>
-                                      UnitsManagerDialog(
-                                        unitsManager: _unitsManager,
-                                      ),
-                                );
-                                if (mounted) {
-                                  setState(() {
-                                    _syncSelectedValues();
-                                  });
-                                }
-                              },
-                            ),
-                            buildField(
-                              controller: unitsPerPurchaseUnitController,
-                              label: 'عدد وحدات التخزين داخل وحدة الشراء',
-                              icon: Icons.format_list_numbered,
-                              keyboard: TextInputType.number,
-                              helperText: 'مثال: 1 عمود = 100 قطعة',
-                              readOnly: _selectedPurchaseUnit == _selectedStorageUnit,
-                              validator: _validateUnitsPerPurchaseUnit,
-                            ),
-                            buildField(
-                              controller: conversionFactorController,
-                              label: 'معامل التحويل',
-                              icon: Icons.swap_horiz,
-                              keyboard: TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                              validator: (value) {
-                                // The purchase-to-sale factor is optional when
-                                // unitsPerPurchaseUnit defines the purchase size.
-                                if (value == null || value.trim().isEmpty) {
-                                  return null;
-                                }
-                                final parsed = double.tryParse(value);
-                                if (parsed == null || parsed <= 0) {
-                                  return 'أدخل رقمًا صحيحًا أكبر من صفر';
-                                }
-                                return null;
-                              },
-                              trailingAction: IconButton(
-                                tooltip: 'إدارة قوالب التحويل',
-                                icon: const Icon(Icons.settings),
-                                splashRadius: AppStyles.iconSizeLg,
-                                style: IconButton.styleFrom(
-                                  backgroundColor:
-                                      AppStyles.primaryColor.withValues(alpha: 0.1),
-                                  foregroundColor: AppStyles.primaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppStyles.spacingMd),
+                    ExpansionTile(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.settings),
+                          const SizedBox(width: AppStyles.spacingSm),
+                          const Text('الإعدادات المتقدمة'),
+                        ],
+                      ),
+                      initiallyExpanded: false,
+                      tilePadding: const EdgeInsets.symmetric(
+                        horizontal: AppStyles.spacingXs,
+                      ),
+                      childrenPadding: const EdgeInsets.only(
+                        top: AppStyles.spacingMd,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                      ),
+                      children: canAccessAdvanced
+                          ? [
+                              buildField(
+                                controller: buyPriceController,
+                                label: 'سعر الشراء',
+                                icon: Icons.money,
+                                keyboard: TextInputType.numberWithOptions(
+                                  decimal: true,
                                 ),
-                                onPressed: () async {
+                                validator: (value) => _validatePositiveNumber(
+                                  value,
+                                  'سعر الشراء',
+                                ),
+                              ),
+                              buildField(
+                                controller: minQuantityController,
+                                label: 'الحد الأدنى',
+                                icon: Icons.warning_amber_rounded,
+                                keyboard: TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                                validator: (value) =>
+                                    _validateNonNegativeNumber(
+                                      value,
+                                      'الحد الأدنى',
+                                    ),
+                              ),
+                              buildDropdown(
+                                label: 'وحدة التخزين',
+                                value: _selectedStorageUnit,
+                                items: _unitsManager.availableUnits,
+                                validator: _validateRequiredUnit,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedStorageUnit = value;
+                                    _updateUnitsPerPurchaseUnit(
+                                      clearWhenDifferent: true,
+                                    );
+                                    _loadConversionFactor();
+                                  });
+                                },
+                                icon: Icons.inventory,
+                                onManagePressed: () async {
                                   await showDialog(
                                     context: context,
                                     builder: (dialogContext) =>
-                                        ConversionManagerDialog(
-                                          conversionManager: _conversionManager,
+                                        UnitsManagerDialog(
+                                          unitsManager: _unitsManager,
                                         ),
                                   );
                                   if (mounted) {
@@ -859,209 +785,272 @@ class _AddProductDialogState extends State<AddProductDialog> {
                                   }
                                 },
                               ),
-                            ),
-                            _buildImageField(),
-                            buildDropdown(
-                              label: 'الوصف',
-                              value: _selectedDescription,
-                              items: _descriptionsManager.descriptions,
-                              onChanged: (value) =>
-                                  setState(() => _selectedDescription = value),
-                              icon: Icons.description,
-                              onManagePressed: () async {
-                                await showDialog(
-                                  context: context,
-                                  builder: (dialogContext) =>
-                                      DescriptionsManagerDialog(
-                                        descriptionsManager: _descriptionsManager,
-                                      ),
-                                );
-                                if (mounted) {
-                                  setState(() {});
-                                }
-                              },
-                            ),
-                            if (_selectedDescription != null &&
-                                _selectedDescription!.isNotEmpty)
-                              Container(
-                                padding: const EdgeInsets.all(AppStyles.spacingSm),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(AppStyles.radiusSm),
+                              buildDropdown(
+                                label: 'وحدة الشراء',
+                                value: _selectedPurchaseUnit,
+                                items: _unitsManager.availableUnits,
+                                validator: _validateRequiredUnit,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedPurchaseUnit = value;
+                                    _updateUnitsPerPurchaseUnit(
+                                      clearWhenDifferent: true,
+                                    );
+                                    _loadConversionFactor();
+                                  });
+                                },
+                                icon: Icons.shopping_cart,
+                                onManagePressed: () async {
+                                  await showDialog(
+                                    context: context,
+                                    builder: (dialogContext) =>
+                                        UnitsManagerDialog(
+                                          unitsManager: _unitsManager,
+                                        ),
+                                  );
+                                  if (mounted) {
+                                    setState(() {
+                                      _syncSelectedValues();
+                                    });
+                                  }
+                                },
+                              ),
+                              buildField(
+                                controller: unitsPerPurchaseUnitController,
+                                label: 'عدد وحدات التخزين داخل وحدة الشراء',
+                                icon: Icons.format_list_numbered,
+                                keyboard: TextInputType.number,
+                                helperText: 'مثال: 1 عمود = 100 قطعة',
+                                readOnly:
+                                    _selectedPurchaseUnit ==
+                                    _selectedStorageUnit,
+                                onChanged: (_) =>
+                                    setState(_loadConversionFactor),
+                                validator: _validateUnitsPerPurchaseUnit,
+                              ),
+                              buildField(
+                                controller: conversionFactorController,
+                                label: 'معامل التحويل',
+                                icon: Icons.swap_horiz,
+                                readOnly: true,
+                                helperText:
+                                    '1 ${_selectedPurchaseUnit ?? ''} = ${unitsPerPurchaseUnitController.text.isEmpty ? '0' : unitsPerPurchaseUnitController.text} ${_selectedStorageUnit ?? ''}',
+                              ),
+                              _buildImageField(),
+                              buildDropdown(
+                                label: 'الوصف',
+                                value: _selectedDescription,
+                                items: _descriptionsManager.descriptions,
+                                onChanged: (value) => setState(
+                                  () => _selectedDescription = value,
                                 ),
+                                icon: Icons.description,
+                                onManagePressed: () async {
+                                  await showDialog(
+                                    context: context,
+                                    builder: (dialogContext) =>
+                                        DescriptionsManagerDialog(
+                                          descriptionsManager:
+                                              _descriptionsManager,
+                                        ),
+                                  );
+                                  if (mounted) {
+                                    setState(() {});
+                                  }
+                                },
+                              ),
+                              if (_selectedDescription != null &&
+                                  _selectedDescription!.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.all(
+                                    AppStyles.spacingSm,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(
+                                      AppStyles.radiusSm,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _selectedDescription!,
+                                    style: TextStyle(
+                                      fontSize: AppStyles.fontSizeMd,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ),
+                              if (ProductAccess.canAccessSuppliers(widget.role))
+                                buildField(
+                                  controller: supplierController,
+                                  label: 'المورد',
+                                  icon: Icons.business,
+                                  required: false,
+                                ),
+                            ]
+                          : [
+                              Padding(
+                                padding: const EdgeInsets.all(
+                                  AppStyles.spacingLg,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.lock,
+                                      color: AppStyles.errorColor,
+                                    ),
+                                    const SizedBox(width: AppStyles.spacingSm),
+                                    Text(
+                                      ProductAccess.restrictedMessage,
+                                      style: const TextStyle(
+                                        color: AppStyles.errorColor,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                    ),
+                    const SizedBox(height: AppStyles.spacingMd),
+                    ExpansionTile(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.sell),
+                          const SizedBox(width: AppStyles.spacingSm),
+                          const Text('وحدات البيع والأسعار'),
+                        ],
+                      ),
+                      initiallyExpanded: false,
+                      tilePadding: const EdgeInsets.symmetric(
+                        horizontal: AppStyles.spacingXs,
+                      ),
+                      childrenPadding: const EdgeInsets.only(
+                        top: AppStyles.spacingMd,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                      ),
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(AppStyles.spacingSm),
+                          decoration: BoxDecoration(
+                            color: AppStyles.primaryColor.withValues(
+                              alpha: 0.05,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppStyles.radiusMd,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: AppStyles.iconSizeMd,
+                                color: AppStyles.primaryColor,
+                              ),
+                              const SizedBox(width: AppStyles.spacingSm),
+                              Expanded(
                                 child: Text(
-                                  _selectedDescription!,
+                                  'يمكنك إضافة أكثر من وحدة بيع لنفس المنتج مع أسعار مختلفة',
                                   style: TextStyle(
                                     fontSize: AppStyles.fontSizeMd,
                                     color: Colors.grey.shade700,
                                   ),
                                 ),
                               ),
-                            if (ProductAccess.canAccessSuppliers(widget.role))
-                              buildField(
-                                controller: supplierController,
-                                label: 'المورد',
-                                icon: Icons.business,
-                                required: false,
-                              ),
-                          ]
-                        : [
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppStyles.spacingMd),
+                        if (_saleUnits.isEmpty)
                           Padding(
                             padding: const EdgeInsets.all(AppStyles.spacingLg),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.lock,
-                                  color: AppStyles.errorColor,
-                                ),
-                                const SizedBox(width: AppStyles.spacingSm),
-                                Text(
-                                  ProductAccess.restrictedMessage,
-                                  style: const TextStyle(
-                                    color: AppStyles.errorColor,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              'لا توجد وحدات بيع مضافة',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontStyle: FontStyle.italic,
+                              ),
                             ),
+                          )
+                        else
+                          ..._saleUnits.map((saleUnit) {
+                            return Card(
+                              key: ObjectKey(saleUnit),
+                              margin: const EdgeInsets.symmetric(
+                                vertical: AppStyles.spacingXs,
+                              ),
+                              child: ListTile(
+                                title: Text(saleUnit.saleUnit),
+                                subtitle: Text(
+                                  'قطاعي: ${saleUnit.retailPrice.toStringAsFixed(2)}${saleUnit.wholesalePrice != null ? ' | جملة: ${saleUnit.wholesalePrice!.toStringAsFixed(2)}' : ''}',
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, size: 20),
+                                      onPressed: () => _editSaleUnit(saleUnit),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, size: 20),
+                                      onPressed: () =>
+                                          _deleteSaleUnit(saleUnit),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        const SizedBox(height: AppStyles.spacingSm),
+                        ElevatedButton.icon(
+                          onPressed: _addSaleUnit,
+                          icon: const Icon(Icons.add),
+                          label: const Text('إضافة وحدة بيع'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppStyles.primaryColor,
+                            foregroundColor: Colors.white,
                           ),
-                        ],
-                  ),
-                  const SizedBox(height: AppStyles.spacingMd),
-                  ExpansionTile(
-                    title: Row(
-                      children: [
-                        const Icon(Icons.sell),
-                        const SizedBox(width: AppStyles.spacingSm),
-                        const Text('وحدات البيع والأسعار'),
+                        ),
                       ],
                     ),
-                    initiallyExpanded: false,
-                    tilePadding: const EdgeInsets.symmetric(
-                      horizontal: AppStyles.spacingXs,
-                    ),
-                    childrenPadding: const EdgeInsets.only(
-                      top: AppStyles.spacingMd,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppStyles.radiusMd),
-                    ),
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(AppStyles.spacingSm),
-                        decoration: BoxDecoration(
-                          color: AppStyles.primaryColor.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(AppStyles.radiusMd),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: AppStyles.iconSizeMd,
-                              color: AppStyles.primaryColor,
-                            ),
-                            const SizedBox(width: AppStyles.spacingSm),
-                            Expanded(
-                              child: Text(
-                                'يمكنك إضافة أكثر من وحدة بيع لنفس المنتج مع أسعار مختلفة',
-                                style: TextStyle(
-                                  fontSize: AppStyles.fontSizeMd,
-                                  color: Colors.grey.shade700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: AppStyles.spacingMd),
-                      if (_saleUnits.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(AppStyles.spacingLg),
-                          child: Text(
-                            'لا توجد وحدات بيع مضافة',
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        )
-                      else
-                        ..._saleUnits.map((saleUnit) {
-                          return Card(
-                            key: ObjectKey(saleUnit),
-                            margin: const EdgeInsets.symmetric(
-                              vertical: AppStyles.spacingXs,
-                            ),
-                            child: ListTile(
-                              title: Text(saleUnit.saleUnit),
-                              subtitle: Text(
-                                'قطاعي: ${saleUnit.retailPrice.toStringAsFixed(2)}${saleUnit.wholesalePrice != null ? ' | جملة: ${saleUnit.wholesalePrice!.toStringAsFixed(2)}' : ''}',
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, size: 20),
-                                    onPressed: () => _editSaleUnit(saleUnit),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, size: 20),
-                                    onPressed: () => _deleteSaleUnit(saleUnit),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
-                      const SizedBox(height: AppStyles.spacingSm),
-                      ElevatedButton.icon(
-                        onPressed: _addSaleUnit,
-                        icon: const Icon(Icons.add),
-                        label: const Text('إضافة وحدة بيع'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppStyles.primaryColor,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey.shade700,
+              ),
+              icon: const Icon(Icons.arrow_back, size: 16),
+              label: const Text('رجوع'),
+            ),
+            if (!_isViewOnly)
+              ElevatedButton.icon(
+                onPressed: _isSaving ? null : _saveProduct,
+                icon: const Icon(Icons.save),
+                label: const Text('حفظ'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppStyles.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppStyles.spacingLg,
+                    vertical: AppStyles.spacingSm,
                   ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.grey.shade700,
-            ),
-            icon: const Icon(Icons.arrow_back, size: 16),
-            label: const Text('رجوع'),
-          ),
-          if (!_isViewOnly)
-            ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveProduct,
-              icon: const Icon(Icons.save),
-              label: const Text('حفظ'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppStyles.primaryColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppStyles.spacingLg,
-                  vertical: AppStyles.spacingSm,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                  ),
                 ),
               ),
-            ),
-        ],
-        actionsPadding: const EdgeInsets.all(AppStyles.spacingLg),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppStyles.radiusLg),
-        ),
+          ],
+          actionsPadding: const EdgeInsets.all(AppStyles.spacingLg),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppStyles.radiusLg),
+          ),
         ),
       ),
     );
@@ -1160,9 +1149,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
           onPressed: _pickImage,
           icon: const Icon(Icons.camera_alt_outlined),
           label: const Text('اختر صورة'),
-          style: TextButton.styleFrom(
-            foregroundColor: AppStyles.primaryColor,
-          ),
+          style: TextButton.styleFrom(foregroundColor: AppStyles.primaryColor),
         ),
       ],
     );
@@ -1179,6 +1166,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
     FormFieldValidator<String>? validator,
     bool? readOnly,
     String? helperText,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppStyles.spacingMd),
@@ -1193,7 +1181,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
                   keyboardType: keyboard,
                   textDirection: TextDirection.rtl,
                   readOnly: readOnly ?? _isViewOnly,
-                  validator: validator ??
+                  onChanged: onChanged,
+                  validator:
+                      validator ??
                       (required
                           ? (value) {
                               if (value == null || value.trim().isEmpty) {
@@ -1254,10 +1244,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
               items: items.map((String item) {
                 return DropdownMenuItem<String>(
                   value: item,
-                  child: Text(
-                    item,
-                    textDirection: TextDirection.rtl,
-                  ),
+                  child: Text(item, textDirection: TextDirection.rtl),
                 );
               }).toList(),
               onChanged: _isViewOnly ? null : onChanged,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../helpers/purchase_invoice_unit_helper.dart';
 import '../../models/product_model.dart';
 import '../../models/purchase_invoice_item_model.dart';
 import '../../models/purchase_invoice_model.dart';
@@ -7,8 +8,10 @@ import '../../models/supplier_model.dart';
 import '../../repositories/product_repository.dart';
 import '../../repositories/purchase_invoice_repository.dart';
 import '../../repositories/supplier_repository.dart';
+import '../../utils/quantity_formatter.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../products/app_styles.dart';
+import 'purchase_invoice_draft_store.dart';
 
 class PurchaseInvoiceScreen extends StatefulWidget {
   final int? supplierId;
@@ -24,6 +27,8 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
   final ProductRepository _productRepository = ProductRepository();
   final PurchaseInvoiceRepository _invoiceRepository =
       PurchaseInvoiceRepository();
+  final PurchaseInvoiceDraftStore _draftStore =
+      PurchaseInvoiceDraftStore.instance;
   final TextEditingController _productSearchController =
       TextEditingController();
   final TextEditingController _quantityController = TextEditingController(
@@ -40,22 +45,55 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
   List<Supplier> _suppliers = [];
   List<Product> _products = [];
   final List<PurchaseInvoiceItem> _items = [];
+  final Map<String, String> _unitPrices = {};
   Supplier? _selectedSupplier;
   Product? _selectedProduct;
+  String? _selectedInvoiceUnit;
   DateTime _date = DateTime.now();
   String _invoiceNumber = '...';
   String _paymentType = 'cash';
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _isRestoringDraft = false;
 
   double get _subtotal => _items.fold(0, (sum, item) => sum + item.total);
   double get _discount => double.tryParse(_discountController.text.trim()) ?? 0;
   double get _total => (_subtotal - _discount).clamp(0, double.infinity);
+  int get _selectedUnitsPerPurchaseUnit =>
+      _selectedProduct?.unitsPerPurchaseUnit ?? 1;
+  double get _selectedConversionFactor {
+    final product = _selectedProduct;
+    final invoiceUnit = _selectedInvoiceUnit;
+    if (product == null || invoiceUnit == null) return 0;
+    try {
+      return PurchaseInvoiceUnitHelper.conversionFactorToStorage(
+        invoiceUnit: invoiceUnit,
+        purchaseUnit: product.purchaseUnit,
+        storageUnit: product.storageUnit,
+        unitsPerPurchaseUnit: _selectedUnitsPerPurchaseUnit.toDouble(),
+      );
+    } on ArgumentError {
+      return 0;
+    }
+  }
+
+  double get _previewStorageQuantity =>
+      (double.tryParse(_quantityController.text.trim()) ?? 0) *
+      _selectedConversionFactor;
+
+  List<String> get _availableInvoiceUnits {
+    final product = _selectedProduct;
+    if (product == null) return const [];
+    return PurchaseInvoiceUnitHelper.availableUnits(
+      purchaseUnit: product.purchaseUnit,
+      storageUnit: product.storageUnit,
+    );
+  }
 
   @override
   void initState() {
     super.initState();
-    _discountController.addListener(_refreshTotals);
+    _discountController.addListener(_handleTotalsChanged);
     _loadFormData();
   }
 
@@ -68,13 +106,37 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
       ]);
       if (!mounted) return;
       final suppliers = results[0] as List<Supplier>;
+      final products = results[1] as List<Product>;
+      final draft = _draftStore.draft;
+      _isRestoringDraft = true;
+      if (draft != null) {
+        _discountController.text = draft.discountText;
+        _notesController.text = draft.notes;
+        _productSearchController.text = draft.productSearchText;
+        _quantityController.text = draft.quantityText;
+        _unitPriceController.text = draft.unitPriceText;
+        _unitPrices.addAll(draft.unitPrices);
+        _items.addAll(draft.items);
+        _selectedProduct = products
+            .where((product) => product.id == draft.selectedProductId)
+            .firstOrNull;
+        _selectedInvoiceUnit =
+            draft.selectedUnit ?? _selectedProduct?.purchaseUnit;
+        _date = DateTime.tryParse(draft.date) ?? _date;
+        _paymentType = draft.paymentType;
+      }
+      _isRestoringDraft = false;
       setState(() {
         _suppliers = suppliers;
-        _products = results[1] as List<Product>;
+        _products = products;
         _invoiceNumber = results[2] as String;
-        _selectedSupplier = suppliers
-            .where((supplier) => supplier.id == widget.supplierId)
-            .firstOrNull;
+        _selectedSupplier =
+            suppliers
+                .where((supplier) => supplier.id == draft?.supplierId)
+                .firstOrNull ??
+            suppliers
+                .where((supplier) => supplier.id == widget.supplierId)
+                .firstOrNull;
       });
     } catch (error) {
       if (mounted) _showError('تعذر تحميل بيانات الفاتورة: $error');
@@ -99,9 +161,34 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
   void _selectProduct(Product product) {
     setState(() {
       _selectedProduct = product;
+      _selectedInvoiceUnit = product.purchaseUnit;
+      _unitPrices.clear();
       _productSearchController.text = product.name;
       _unitPriceController.text = product.buyPrice.toStringAsFixed(2);
+      _unitPrices[product.purchaseUnit] = _unitPriceController.text;
     });
+    _saveDraft();
+  }
+
+  void _changeInvoiceUnit(String? unit) {
+    final product = _selectedProduct;
+    if (product == null || unit == null) return;
+
+    final previousUnit = _selectedInvoiceUnit;
+    if (previousUnit != null) {
+      _unitPrices[previousUnit] = _unitPriceController.text;
+    }
+
+    setState(() {
+      _selectedInvoiceUnit = unit;
+      _unitPriceController.text =
+          _unitPrices[unit] ??
+          (unit == product.purchaseUnit
+              ? product.buyPrice.toStringAsFixed(2)
+              : '');
+      _unitPrices[unit] = _unitPriceController.text;
+    });
+    _saveDraft();
   }
 
   void _addProduct() {
@@ -109,6 +196,8 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
     final quantity = double.tryParse(_quantityController.text.trim());
     final unitPrice = double.tryParse(_unitPriceController.text.trim());
     if (product?.id == null ||
+        _selectedInvoiceUnit == null ||
+        _selectedConversionFactor <= 0 ||
         quantity == null ||
         quantity <= 0 ||
         unitPrice == null ||
@@ -123,19 +212,50 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
           productId: product!.id!,
           productName: product.name,
           quantity: quantity,
+          purchaseUnit: _selectedInvoiceUnit!,
+          conversionFactor: _selectedConversionFactor,
+          storageQuantity: quantity * _selectedConversionFactor,
           unitPrice: unitPrice,
           total: quantity * unitPrice,
         ),
       );
       _selectedProduct = null;
+      _selectedInvoiceUnit = null;
+      _unitPrices.clear();
       _productSearchController.clear();
       _quantityController.text = '1';
       _unitPriceController.clear();
     });
+    _saveDraft();
   }
 
-  void _refreshTotals() {
-    if (mounted) setState(() {});
+  void _handleTotalsChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _saveDraft();
+  }
+
+  void _saveDraft() {
+    if (_isRestoringDraft) return;
+    if (_selectedInvoiceUnit != null) {
+      _unitPrices[_selectedInvoiceUnit!] = _unitPriceController.text;
+    }
+    _draftStore.save(
+      PurchaseInvoiceDraft(
+        supplierId: _selectedSupplier?.id,
+        date: _date.toIso8601String(),
+        paymentType: _paymentType,
+        discountText: _discountController.text,
+        notes: _notesController.text,
+        items: List<PurchaseInvoiceItem>.of(_items),
+        selectedProductId: _selectedProduct?.id,
+        productSearchText: _productSearchController.text,
+        selectedUnit: _selectedInvoiceUnit,
+        quantityText: _quantityController.text,
+        unitPriceText: _unitPriceController.text,
+        unitPrices: Map<String, String>.of(_unitPrices),
+      ),
+    );
   }
 
   Future<void> _pickDate() async {
@@ -174,7 +294,10 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
             ),
           ),
     );
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null) {
+      setState(() => _date = picked);
+      _saveDraft();
+    }
   }
 
   Future<void> _saveInvoice() async {
@@ -210,6 +333,7 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
 
     try {
       await _invoiceRepository.createPurchaseInvoice(invoice, _items);
+      _draftStore.clear();
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       if (mounted) _showError('تعذر حفظ فاتورة الشراء: $error');
@@ -224,6 +348,73 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
     );
   }
 
+  Future<void> _confirmClearDraft() async {
+    final confirmed = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+          Directionality(
+            textDirection: TextDirection.rtl,
+            child: DraggableDialog(
+              title: 'تفريغ مسودة الفاتورة',
+              width: 420,
+              height: 230,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('سيتم حذف جميع بيانات المسودة الحالية.'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(false),
+                            child: const Text('رجوع'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () =>
+                                Navigator.of(dialogContext).pop(true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppStyles.errorColor,
+                            ),
+                            child: const Text('تفريغ المسودة'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _selectedSupplier = _suppliers
+          .where((supplier) => supplier.id == widget.supplierId)
+          .firstOrNull;
+      _selectedProduct = null;
+      _selectedInvoiceUnit = null;
+      _date = DateTime.now();
+      _paymentType = 'cash';
+      _items.clear();
+      _unitPrices.clear();
+      _productSearchController.clear();
+      _quantityController.text = '1';
+      _unitPriceController.clear();
+      _discountController.text = '0';
+      _notesController.clear();
+    });
+    _draftStore.clear();
+  }
+
   String _formatDate(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
@@ -235,7 +426,17 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: AppStyles.backgroundColor,
-        appBar: AppBar(title: const Text('فاتورة شراء'), centerTitle: true),
+        appBar: AppBar(
+          title: const Text('فاتورة شراء'),
+          centerTitle: true,
+          actions: [
+            IconButton(
+              tooltip: 'تفريغ المسودة',
+              onPressed: _confirmClearDraft,
+              icon: const Icon(Icons.delete_sweep_outlined),
+            ),
+          ],
+        ),
         body: _suppliers.isEmpty
             ? const Center(child: Text('أضف مورداً أولاً لإنشاء فاتورة شراء'))
             : SingleChildScrollView(
@@ -283,9 +484,12 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                         ),
                                       )
                                       .toList(),
-                                  onChanged: (supplier) => setState(
-                                    () => _selectedSupplier = supplier,
-                                  ),
+                                  onChanged: (supplier) {
+                                    setState(
+                                      () => _selectedSupplier = supplier,
+                                    );
+                                    _saveDraft();
+                                  },
                                 ),
                               ],
                             ),
@@ -314,8 +518,15 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                     prefixIcon: Icon(Icons.search),
                                     border: OutlineInputBorder(),
                                   ),
-                                  onChanged: (_) =>
-                                      setState(() => _selectedProduct = null),
+                                  onChanged: (_) {
+                                    setState(() {
+                                      _selectedProduct = null;
+                                      _selectedInvoiceUnit = null;
+                                      _unitPrices.clear();
+                                      _unitPriceController.clear();
+                                    });
+                                    _saveDraft();
+                                  },
                                 ),
                                 if (_matchingProducts.isNotEmpty)
                                   Container(
@@ -342,6 +553,69 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                           .toList(),
                                     ),
                                   ),
+                                if (_selectedProduct != null) ...[
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: AppStyles.primaryColor.withValues(
+                                        alpha: 0.06,
+                                      ),
+                                      border: Border.all(
+                                        color: AppStyles.primaryColor
+                                            .withValues(alpha: 0.2),
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'وحدة الشراء: ${_selectedProduct!.purchaseUnit}',
+                                        ),
+                                        Text(
+                                          'وحدة التخزين: ${_selectedProduct!.storageUnit}',
+                                        ),
+                                        Text(
+                                          'تحويل المنتج: 1 ${_selectedProduct!.purchaseUnit} = $_selectedUnitsPerPurchaseUnit ${_selectedProduct!.storageUnit}',
+                                        ),
+                                        const SizedBox(height: 12),
+                                        DropdownButtonFormField<String>(
+                                          key: ValueKey(
+                                            'invoice-unit-${_selectedProduct!.id}',
+                                          ),
+                                          initialValue: _selectedInvoiceUnit,
+                                          decoration: const InputDecoration(
+                                            labelText: 'وحدة الفاتورة *',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          items: _availableInvoiceUnits
+                                              .map(
+                                                (unit) => DropdownMenuItem(
+                                                  value: unit,
+                                                  child: Text(unit),
+                                                ),
+                                              )
+                                              .toList(),
+                                          onChanged: _changeInvoiceUnit,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'تحويل وحدة الفاتورة: 1 ${_selectedInvoiceUnit ?? ''} = ${formatQuantity(_selectedConversionFactor)} ${_selectedProduct!.storageUnit}',
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'الكمية التي ستضاف للمخزون: ${formatQuantity(_previewStorageQuantity)} ${_selectedProduct!.storageUnit}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 const SizedBox(height: 12),
                                 Wrap(
                                   spacing: 12,
@@ -357,9 +631,13 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                               decimal: true,
                                             ),
                                         decoration: const InputDecoration(
-                                          labelText: 'الكمية',
+                                          labelText: 'الكمية بوحدة الفاتورة',
                                           border: OutlineInputBorder(),
                                         ),
+                                        onChanged: (_) {
+                                          setState(() {});
+                                          _saveDraft();
+                                        },
                                       ),
                                     ),
                                     SizedBox(
@@ -370,10 +648,20 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                             const TextInputType.numberWithOptions(
                                               decimal: true,
                                             ),
-                                        decoration: const InputDecoration(
-                                          labelText: 'سعر الوحدة',
+                                        decoration: InputDecoration(
+                                          labelText:
+                                              _selectedInvoiceUnit == null
+                                              ? 'سعر الوحدة المختارة'
+                                              : 'سعر $_selectedInvoiceUnit',
                                           border: OutlineInputBorder(),
                                         ),
+                                        onChanged: (value) {
+                                          if (_selectedInvoiceUnit != null) {
+                                            _unitPrices[_selectedInvoiceUnit!] =
+                                                value;
+                                          }
+                                          _saveDraft();
+                                        },
                                       ),
                                     ),
                                     FilledButton.icon(
@@ -397,7 +685,7 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                         entry.value.productName ?? 'منتج',
                                       ),
                                       subtitle: Text(
-                                        '${entry.value.quantity} × ${entry.value.unitPrice.toStringAsFixed(2)}',
+                                        '${formatQuantity(entry.value.quantity)} ${entry.value.purchaseUnit} × ${entry.value.unitPrice.toStringAsFixed(2)} | ${formatQuantity(entry.value.storageQuantity)} مخزون',
                                       ),
                                       trailing: Row(
                                         mainAxisSize: MainAxisSize.min,
@@ -409,9 +697,13 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                           ),
                                           IconButton(
                                             tooltip: 'حذف المنتج',
-                                            onPressed: () => setState(
-                                              () => _items.removeAt(entry.key),
-                                            ),
+                                            onPressed: () {
+                                              setState(
+                                                () =>
+                                                    _items.removeAt(entry.key),
+                                              );
+                                              _saveDraft();
+                                            },
                                             icon: const Icon(
                                               Icons.delete_outline,
                                               color: AppStyles.errorColor,
@@ -458,9 +750,12 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                 ),
                                 RadioGroup<String>(
                                   groupValue: _paymentType,
-                                  onChanged: (value) => setState(
-                                    () => _paymentType = value ?? 'cash',
-                                  ),
+                                  onChanged: (value) {
+                                    setState(
+                                      () => _paymentType = value ?? 'cash',
+                                    );
+                                    _saveDraft();
+                                  },
                                   child: const Row(
                                     children: [
                                       Expanded(
@@ -487,6 +782,7 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
                                     labelText: 'ملاحظات',
                                     border: OutlineInputBorder(),
                                   ),
+                                  onChanged: (_) => _saveDraft(),
                                 ),
                                 const SizedBox(height: 16),
                                 FilledButton.icon(
@@ -542,7 +838,7 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
     _quantityController.dispose();
     _unitPriceController.dispose();
     _discountController
-      ..removeListener(_refreshTotals)
+      ..removeListener(_handleTotalsChanged)
       ..dispose();
     _notesController.dispose();
     _dateDialogController.dispose();

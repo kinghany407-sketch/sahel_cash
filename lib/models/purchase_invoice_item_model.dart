@@ -3,6 +3,9 @@ class PurchaseInvoiceItem {
   int? invoiceId;
   final int productId;
   final double quantity;
+  final String purchaseUnit;
+  final double conversionFactor;
+  final double storageQuantity;
   final double unitPrice;
   final double total;
   final String? productName;
@@ -12,6 +15,9 @@ class PurchaseInvoiceItem {
     this.invoiceId,
     required this.productId,
     required this.quantity,
+    required this.purchaseUnit,
+    required this.conversionFactor,
+    required this.storageQuantity,
     required this.unitPrice,
     required this.total,
     this.productName,
@@ -23,6 +29,9 @@ class PurchaseInvoiceItem {
       'invoiceId': invoiceId,
       'productId': productId,
       'quantity': quantity,
+      'purchaseUnit': purchaseUnit,
+      'conversionFactor': conversionFactor,
+      'storageQuantity': storageQuantity,
       'unitPrice': unitPrice,
       'total': total,
     };
@@ -34,6 +43,10 @@ class PurchaseInvoiceItem {
       invoiceId: map['invoiceId'],
       productId: map['productId'],
       quantity: (map['quantity'] ?? 0).toDouble(),
+      purchaseUnit: map['purchaseUnit'] ?? 'قطعة',
+      conversionFactor: (map['conversionFactor'] ?? 1).toDouble(),
+      storageQuantity: (map['storageQuantity'] ?? map['quantity'] ?? 0)
+          .toDouble(),
       unitPrice: (map['unitPrice'] ?? 0).toDouble(),
       total: (map['total'] ?? 0).toDouble(),
       productName: map['productName'],

@@ -49,10 +49,11 @@ class PurchaseInvoiceDetailsDialog extends StatelessWidget {
                 else
                   Table(
                     columnWidths: const {
-                      0: FlexColumnWidth(3),
-                      1: FlexColumnWidth(1),
-                      2: FlexColumnWidth(1.5),
+                      0: FlexColumnWidth(2.5),
+                      1: FlexColumnWidth(1.5),
+                      2: FlexColumnWidth(1),
                       3: FlexColumnWidth(1.5),
+                      4: FlexColumnWidth(1.5),
                     },
                     border: TableBorder.all(color: Colors.black12),
                     children: [
@@ -60,7 +61,8 @@ class PurchaseInvoiceDetailsDialog extends StatelessWidget {
                         decoration: BoxDecoration(color: Color(0xFFF4F5F8)),
                         children: [
                           _TableCell('المنتج', isHeader: true),
-                          _TableCell('الكمية', isHeader: true),
+                          _TableCell('كمية الشراء', isHeader: true),
+                          _TableCell('كمية التخزين', isHeader: true),
                           _TableCell('سعر الوحدة', isHeader: true),
                           _TableCell('الإجمالي', isHeader: true),
                         ],
@@ -69,7 +71,10 @@ class PurchaseInvoiceDetailsDialog extends StatelessWidget {
                         (item) => TableRow(
                           children: [
                             _TableCell(item.productName ?? 'منتج'),
-                            _TableCell(formatQuantity(item.quantity)),
+                            _TableCell(
+                              '${formatQuantity(item.quantity)} ${item.purchaseUnit}',
+                            ),
+                            _TableCell(formatQuantity(item.storageQuantity)),
                             _TableCell(item.unitPrice.toStringAsFixed(2)),
                             _TableCell(item.total.toStringAsFixed(2)),
                           ],

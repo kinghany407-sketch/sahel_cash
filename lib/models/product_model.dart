@@ -106,7 +106,7 @@ class Product {
       purchaseUnit: map['purchaseUnit'] ?? 'قطعة',
       saleUnit: map['saleUnit'] ?? map['unit'] ?? 'قطعة',
       conversionFactor: (map['conversionFactor'] ?? 1).toDouble(),
-      unitsPerPurchaseUnit: (map['unitsPerPurchaseUnit'] ?? 1) as int,
+      unitsPerPurchaseUnit: (map['unitsPerPurchaseUnit'] as num?)?.toInt() ?? 1,
     );
   }
 }

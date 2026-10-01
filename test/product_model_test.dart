@@ -3,6 +3,7 @@ import 'package:sahel_cash/helpers/selling_helper.dart';
 import 'package:sahel_cash/models/product_model.dart';
 import 'package:sahel_cash/models/invoice_model.dart';
 import 'package:sahel_cash/models/invoice_item_model.dart';
+import 'package:sahel_cash/models/purchase_invoice_item_model.dart';
 
 void main() {
   group('Product display helpers', () {
@@ -42,16 +43,19 @@ void main() {
       expect(product.displayQuantity, '2.75');
     });
 
-    test('stock reduction should treat same storage and sale units case-insensitively after trimming', () {
-      final result = SellingHelper.calculateStockReduction(
-        3,
-        ' كيلو ',
-        'كيلو',
-        1000,
-      );
+    test(
+      'stock reduction should treat same storage and sale units case-insensitively after trimming',
+      () {
+        final result = SellingHelper.calculateStockReduction(
+          3,
+          ' كيلو ',
+          'كيلو',
+          1000,
+        );
 
-      expect(result, 3);
-    });
+        expect(result, 3);
+      },
+    );
 
     test('invoice and invoice item models map cleanly', () {
       final invoice = Invoice(
@@ -98,5 +102,28 @@ void main() {
       expect(product.isLowStock, isTrue);
     });
 
+    test('purchase storage-unit count maps from numeric database values', () {
+      final product = Product.fromMap({'unitsPerPurchaseUnit': 100.0});
+
+      expect(product.unitsPerPurchaseUnit, 100);
+      expect(product.toMap()['unitsPerPurchaseUnit'], 100);
+    });
+
+    test('purchase invoice item preserves purchase conversion snapshot', () {
+      final item = PurchaseInvoiceItem.fromMap({
+        'productId': 1,
+        'quantity': 1,
+        'purchaseUnit': 'عامود',
+        'conversionFactor': 100,
+        'storageQuantity': 100,
+        'unitPrice': 10,
+        'total': 10,
+      });
+
+      expect(item.purchaseUnit, 'عامود');
+      expect(item.conversionFactor, 100);
+      expect(item.storageQuantity, 100);
+      expect(item.toMap()['storageQuantity'], 100);
+    });
   });
 }

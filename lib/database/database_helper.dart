@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../helpers/purchase_invoice_unit_helper.dart';
 import '../models/product_model.dart';
 import '../models/product_sale_unit_model.dart';
 
@@ -51,7 +52,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       newPath,
-      version: 11,
+      version: 12,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -182,6 +183,9 @@ CREATE TABLE purchase_invoice_items(
   quantity REAL NOT NULL DEFAULT 0,
   unitPrice REAL NOT NULL DEFAULT 0,
   total REAL NOT NULL DEFAULT 0,
+  purchaseUnit TEXT NOT NULL DEFAULT 'قطعة',
+  conversionFactor REAL NOT NULL DEFAULT 1,
+  storageQuantity REAL NOT NULL DEFAULT 0,
   FOREIGN KEY (invoiceId) REFERENCES purchase_invoices(id),
   FOREIGN KEY (productId) REFERENCES products(id)
 )
@@ -337,6 +341,22 @@ CREATE TABLE IF NOT EXISTS purchase_invoice_items(
   FOREIGN KEY (invoiceId) REFERENCES purchase_invoices(id),
   FOREIGN KEY (productId) REFERENCES products(id)
 )
+''');
+    }
+
+    if (oldVersion < 12) {
+      await db.execute(
+        "ALTER TABLE purchase_invoice_items ADD COLUMN purchaseUnit TEXT NOT NULL DEFAULT 'قطعة'",
+      );
+      await db.execute(
+        'ALTER TABLE purchase_invoice_items ADD COLUMN conversionFactor REAL NOT NULL DEFAULT 1',
+      );
+      await db.execute(
+        'ALTER TABLE purchase_invoice_items ADD COLUMN storageQuantity REAL NOT NULL DEFAULT 0',
+      );
+      await db.execute('''
+UPDATE purchase_invoice_items
+SET storageQuantity = quantity
 ''');
     }
   }
@@ -672,13 +692,52 @@ SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'purchase_invoices
       });
 
       for (final item in items) {
+        final products = await txn.query(
+          'products',
+          columns: ['purchaseUnit', 'storageUnit', 'unitsPerPurchaseUnit'],
+          where: 'id = ?',
+          whereArgs: [item['productId']],
+          limit: 1,
+        );
+        if (products.isEmpty) {
+          throw StateError('Product ${item['productId']} not found');
+        }
+        final product = products.first;
+        final productPurchaseUnit =
+            product['purchaseUnit'] as String? ?? 'قطعة';
+        final productStorageUnit =
+            product['storageUnit'] as String? ?? productPurchaseUnit;
+        final selectedUnit =
+            item['purchaseUnit'] as String? ?? productPurchaseUnit;
+        final unitsPerPurchaseUnit =
+            (product['unitsPerPurchaseUnit'] as num?)?.toDouble() ?? 1;
+        final double conversionFactor;
+        try {
+          conversionFactor =
+              PurchaseInvoiceUnitHelper.conversionFactorToStorage(
+                invoiceUnit: selectedUnit,
+                purchaseUnit: productPurchaseUnit,
+                storageUnit: productStorageUnit,
+                unitsPerPurchaseUnit: unitsPerPurchaseUnit,
+              );
+        } on ArgumentError {
+          throw StateError(
+            'Invoice unit $selectedUnit is invalid for product ${item['productId']}',
+          );
+        }
+        final storageQuantity =
+            (item['quantity'] as num).toDouble() * conversionFactor;
+
         await txn.insert('purchase_invoice_items', {
           ...item,
           'invoiceId': invoiceId,
+          'purchaseUnit': selectedUnit,
+          'conversionFactor': conversionFactor,
+          'storageQuantity': storageQuantity,
         });
         final changedProducts = await txn.rawUpdate(
           'UPDATE products SET quantity = COALESCE(quantity, 0) + ? WHERE id = ?',
-          [item['quantity'], item['productId']],
+          [storageQuantity, item['productId']],
         );
         if (changedProducts == 0) {
           throw StateError('Product ${item['productId']} not found');
@@ -781,7 +840,7 @@ ORDER BY pii.id ASC
       for (final item in items) {
         await txn.rawUpdate(
           'UPDATE products SET quantity = COALESCE(quantity, 0) - ? WHERE id = ?',
-          [item['quantity'], item['productId']],
+          [item['storageQuantity'] ?? item['quantity'], item['productId']],
         );
       }
 
