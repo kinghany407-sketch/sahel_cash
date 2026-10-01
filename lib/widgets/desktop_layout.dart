@@ -5,6 +5,7 @@ import '../screens/home/home_screen.dart';
 import '../screens/inventory/inventory_screen.dart';
 import '../screens/invoices/invoices_screen.dart';
 import '../screens/products/products_screen.dart';
+import '../screens/suppliers/suppliers_screen.dart';
 
 enum DesktopPage {
   home,
@@ -293,7 +294,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       case DesktopPage.customers:
         return const CustomersScreen();
       case DesktopPage.suppliers:
-        return const _PlaceholderScreen(title: 'الموردون');
+        return const SuppliersScreen();
       case DesktopPage.profits:
         return const _PlaceholderScreen(title: 'الأرباح');
       case DesktopPage.expenses:

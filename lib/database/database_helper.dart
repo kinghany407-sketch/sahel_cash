@@ -51,7 +51,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       newPath,
-      version: 9,
+      version: 10,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -131,6 +131,20 @@ FOREIGN KEY (productId) REFERENCES products(id)
 
     await db.execute('''
 CREATE TABLE customers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT,
+  address TEXT,
+  initialBalance REAL DEFAULT 0,
+  currentBalance REAL DEFAULT 0,
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+)
+''');
+
+    await db.execute('''
+CREATE TABLE suppliers(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   phone TEXT,
@@ -235,6 +249,22 @@ FOREIGN KEY (productId) REFERENCES products(id)
     if (oldVersion < 9) {
       await db.execute('''
 CREATE TABLE IF NOT EXISTS customers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT,
+  address TEXT,
+  initialBalance REAL DEFAULT 0,
+  currentBalance REAL DEFAULT 0,
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+)
+''');
+    }
+
+    if (oldVersion < 10) {
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS suppliers(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   phone TEXT,
@@ -483,5 +513,65 @@ CREATE TABLE IF NOT EXISTS customers(
       'UPDATE customers SET currentBalance = currentBalance + ?, updatedAt = ? WHERE id = ?',
       [amount, DateTime.now().toIso8601String(), customerId],
     );
+  }
+
+  // Supplier CRUD operations
+
+  Future<int> insertSupplier(Map<String, dynamic> supplier) async {
+    final db = await database;
+
+    return await db.insert(
+      'suppliers',
+      supplier,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getSuppliers() async {
+    final db = await database;
+
+    return await db.query('suppliers', orderBy: 'name ASC');
+  }
+
+  Future<Map<String, dynamic>?> getSupplierById(int id) async {
+    final db = await database;
+    final maps = await db.query(
+      'suppliers',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+
+    if (maps.isEmpty) return null;
+    return maps.first;
+  }
+
+  Future<List<Map<String, dynamic>>> searchSuppliers(String query) async {
+    final db = await database;
+    final normalizedQuery = '%${query.toLowerCase()}%';
+
+    return await db.query(
+      'suppliers',
+      where: 'LOWER(name) LIKE ? OR LOWER(phone) LIKE ?',
+      whereArgs: [normalizedQuery, normalizedQuery],
+      orderBy: 'name ASC',
+    );
+  }
+
+  Future<int> updateSupplier(Map<String, dynamic> supplier) async {
+    final db = await database;
+
+    return await db.update(
+      'suppliers',
+      supplier,
+      where: 'id = ?',
+      whereArgs: [supplier['id']],
+    );
+  }
+
+  Future<int> deleteSupplier(int id) async {
+    final db = await database;
+
+    return await db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
   }
 }
