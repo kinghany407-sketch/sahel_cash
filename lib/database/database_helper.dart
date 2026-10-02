@@ -1,12 +1,16 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../helpers/purchase_invoice_unit_helper.dart';
+import '../models/invoice_item_model.dart';
+import '../models/invoice_model.dart';
 import '../models/product_model.dart';
 import '../models/product_sale_unit_model.dart';
+import '../models/receipt_voucher_model.dart';
 
 class DatabaseHelper {
   DatabaseHelper._();
@@ -14,6 +18,11 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._();
 
   static Database? _database;
+
+  @visibleForTesting
+  static void setDatabaseForTesting(Database? testDatabase) {
+    _database = testDatabase;
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -52,7 +61,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       newPath,
-      version: 12,
+      version: 14,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -145,6 +154,22 @@ CREATE TABLE customers(
 ''');
 
     await db.execute('''
+CREATE TABLE receipt_vouchers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  voucherNumber TEXT NOT NULL UNIQUE,
+  customerId INTEGER NOT NULL,
+  invoiceId INTEGER,
+  date TEXT NOT NULL,
+  amount REAL NOT NULL CHECK(amount > 0),
+  paymentMethod TEXT NOT NULL DEFAULT 'cash',
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  FOREIGN KEY (customerId) REFERENCES customers(id),
+  FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE SET NULL
+)
+''');
+
+    await db.execute('''
 CREATE TABLE suppliers(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -155,6 +180,17 @@ CREATE TABLE suppliers(
   notes TEXT,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
+)
+''');
+
+    await db.execute('''
+CREATE TABLE expenses(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category TEXT NOT NULL,
+  amount REAL NOT NULL CHECK(amount > 0),
+  date TEXT NOT NULL,
+  notes TEXT,
+  createdAt TEXT NOT NULL
 )
 ''');
 
@@ -359,6 +395,37 @@ UPDATE purchase_invoice_items
 SET storageQuantity = quantity
 ''');
     }
+
+    if (oldVersion < 13) {
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS receipt_vouchers(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  voucherNumber TEXT NOT NULL UNIQUE,
+  customerId INTEGER NOT NULL,
+  invoiceId INTEGER,
+  date TEXT NOT NULL,
+  amount REAL NOT NULL CHECK(amount > 0),
+  paymentMethod TEXT NOT NULL DEFAULT 'cash',
+  notes TEXT,
+  createdAt TEXT NOT NULL,
+  FOREIGN KEY (customerId) REFERENCES customers(id),
+  FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE SET NULL
+)
+''');
+    }
+
+    if (oldVersion < 14) {
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS expenses(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category TEXT NOT NULL,
+  amount REAL NOT NULL CHECK(amount > 0),
+  date TEXT NOT NULL,
+  notes TEXT,
+  createdAt TEXT NOT NULL
+)
+''');
+    }
   }
 
   Future<int> insertProduct(Product product) async {
@@ -369,6 +436,31 @@ SET storageQuantity = quantity
       product.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  Future<int> createExpense(Map<String, dynamic> expense) async {
+    final db = await database;
+    return db.insert('expenses', expense);
+  }
+
+  Future<int> updateExpense(Map<String, dynamic> expense) async {
+    final db = await database;
+    return db.update(
+      'expenses',
+      expense,
+      where: 'id = ?',
+      whereArgs: [expense['id']],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getExpenses() async {
+    final db = await database;
+    return db.query('expenses', orderBy: 'date DESC, id DESC');
+  }
+
+  Future<int> deleteExpense(int id) async {
+    final db = await database;
+    return db.delete('expenses', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Product>> getProducts() async {
@@ -600,8 +692,277 @@ SET storageQuantity = quantity
     final db = await database;
 
     return await db.rawUpdate(
-      'UPDATE customers SET currentBalance = currentBalance + ?, updatedAt = ? WHERE id = ?',
+      'UPDATE customers SET currentBalance = COALESCE(currentBalance, 0) + ?, updatedAt = ? WHERE id = ?',
       [amount, DateTime.now().toIso8601String(), customerId],
+    );
+  }
+
+  Future<int> createSalesInvoiceWithItems({
+    required Invoice invoice,
+    required List<InvoiceItem> items,
+    required Map<int, double> stockReductions,
+  }) async {
+    if (items.isEmpty) throw ArgumentError('Invoice must contain items');
+    if (invoice.paymentMethod == 'credit' && invoice.customerId == null) {
+      throw ArgumentError('Credit invoices require a customer');
+    }
+    if (invoice.paymentMethod != 'cash' && invoice.paymentMethod != 'credit') {
+      throw ArgumentError('Unsupported invoice payment method');
+    }
+
+    final db = await database;
+    return db.transaction((txn) async {
+      if (invoice.customerId != null) {
+        final customers = await txn.query(
+          'customers',
+          columns: ['id'],
+          where: 'id = ?',
+          whereArgs: [invoice.customerId],
+          limit: 1,
+        );
+        if (customers.isEmpty) {
+          throw StateError('Customer ${invoice.customerId} not found');
+        }
+      }
+
+      for (final entry in stockReductions.entries) {
+        if (entry.value <= 0) {
+          throw StateError('Invalid stock reduction for product ${entry.key}');
+        }
+        final updated = await txn.rawUpdate(
+          'UPDATE products SET quantity = COALESCE(quantity, 0) - ? WHERE id = ? AND COALESCE(quantity, 0) >= ?',
+          [entry.value, entry.key, entry.value],
+        );
+        if (updated != 1) {
+          throw StateError(
+            'Insufficient stock or missing product ${entry.key}',
+          );
+        }
+      }
+
+      final invoiceId = await txn.insert('invoices', invoice.toMap());
+      for (final item in items) {
+        await txn.insert('invoice_items', {
+          ...item.toMap(),
+          'invoiceId': invoiceId,
+        });
+      }
+
+      if (invoice.paymentMethod == 'credit') {
+        final updated = await txn.rawUpdate(
+          'UPDATE customers SET currentBalance = COALESCE(currentBalance, 0) + ?, updatedAt = ? WHERE id = ?',
+          [invoice.total, DateTime.now().toIso8601String(), invoice.customerId],
+        );
+        if (updated != 1) {
+          throw StateError('Customer ${invoice.customerId} not found');
+        }
+      }
+
+      return invoiceId;
+    });
+  }
+
+  Future<int> createReceiptVoucher(ReceiptVoucher voucher) async {
+    if (voucher.amount <= 0) {
+      throw ArgumentError('Receipt amount must be greater than zero');
+    }
+
+    final db = await database;
+    return db.transaction((txn) async {
+      final customers = await txn.query(
+        'customers',
+        columns: ['currentBalance'],
+        where: 'id = ?',
+        whereArgs: [voucher.customerId],
+        limit: 1,
+      );
+      if (customers.isEmpty) {
+        throw StateError('Customer ${voucher.customerId} not found');
+      }
+      final currentBalance =
+          (customers.first['currentBalance'] as num?)?.toDouble() ?? 0;
+      if (voucher.amount > currentBalance) {
+        throw StateError('Receipt amount exceeds customer balance');
+      }
+
+      if (voucher.invoiceId != null) {
+        final invoices = await txn.query(
+          'invoices',
+          columns: ['total', 'customerId', 'paymentMethod'],
+          where: 'id = ?',
+          whereArgs: [voucher.invoiceId],
+          limit: 1,
+        );
+        if (invoices.isEmpty ||
+            invoices.first['customerId'] != voucher.customerId ||
+            invoices.first['paymentMethod'] != 'credit') {
+          throw StateError('Receipt invoice does not belong to this customer');
+        }
+        final allocated = await txn.rawQuery(
+          'SELECT COALESCE(SUM(amount), 0) AS amount FROM receipt_vouchers WHERE invoiceId = ?',
+          [voucher.invoiceId],
+        );
+        final alreadyReceived =
+            (allocated.first['amount'] as num?)?.toDouble() ?? 0;
+        final invoiceTotal = (invoices.first['total'] as num?)?.toDouble() ?? 0;
+        if (alreadyReceived + voucher.amount > invoiceTotal) {
+          throw StateError('Receipt amount exceeds invoice balance');
+        }
+      }
+
+      final sequence = await txn.rawQuery('''
+SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'receipt_vouchers'), 0) + 1 AS nextNumber
+''');
+      final nextNumber = (sequence.first['nextNumber'] as int?) ?? 1;
+      final voucherNumber = 'REC-${nextNumber.toString().padLeft(4, '0')}';
+      final voucherId = await txn.insert('receipt_vouchers', {
+        ...voucher.toMap(),
+        'voucherNumber': voucherNumber,
+      });
+
+      final updated = await txn.rawUpdate(
+        'UPDATE customers SET currentBalance = COALESCE(currentBalance, 0) - ?, updatedAt = ? WHERE id = ? AND COALESCE(currentBalance, 0) >= ?',
+        [
+          voucher.amount,
+          DateTime.now().toIso8601String(),
+          voucher.customerId,
+          voucher.amount,
+        ],
+      );
+      if (updated != 1) {
+        throw StateError('Customer balance changed before receipt was saved');
+      }
+      return voucherId;
+    });
+  }
+
+  Future<void> deleteSalesInvoiceWithEffects(int invoiceId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final invoices = await txn.query(
+        'invoices',
+        where: 'id = ?',
+        whereArgs: [invoiceId],
+        limit: 1,
+      );
+      if (invoices.isEmpty) return;
+      final invoice = invoices.first;
+
+      if (invoice['paymentMethod'] == 'credit') {
+        final linkedReceipts = await txn.query(
+          'receipt_vouchers',
+          columns: ['id'],
+          where: 'invoiceId = ?',
+          whereArgs: [invoiceId],
+          limit: 1,
+        );
+        if (linkedReceipts.isNotEmpty) {
+          throw StateError('Invoice has linked receipt vouchers');
+        }
+        final customerId = invoice['customerId'] as int?;
+        if (customerId == null) {
+          throw StateError('Credit invoice has no customer');
+        }
+        final balances = await txn.query(
+          'customers',
+          columns: ['currentBalance'],
+          where: 'id = ?',
+          whereArgs: [customerId],
+          limit: 1,
+        );
+        final balance = balances.isEmpty
+            ? 0.0
+            : (balances.first['currentBalance'] as num?)?.toDouble() ?? 0;
+        final invoiceTotal = (invoice['total'] as num?)?.toDouble() ?? 0;
+        if (balance < invoiceTotal) {
+          throw StateError(
+            'Cannot remove invoice because customer payments must be resolved first',
+          );
+        }
+      }
+
+      final items = await txn.query(
+        'invoice_items',
+        where: 'invoiceId = ?',
+        whereArgs: [invoiceId],
+      );
+      for (final item in items) {
+        final productId = item['productId'] as int;
+        final products = await txn.query(
+          'products',
+          columns: ['storageUnit', 'conversionFactor'],
+          where: 'id = ?',
+          whereArgs: [productId],
+          limit: 1,
+        );
+        if (products.isEmpty) {
+          throw StateError(
+            'Product $productId not found while restoring stock',
+          );
+        }
+        final product = products.first;
+        final storageUnit = (product['storageUnit'] as String? ?? '')
+            .trim()
+            .toLowerCase();
+        final saleUnit = (item['saleUnit'] as String? ?? '')
+            .trim()
+            .toLowerCase();
+        var conversionToStorage = 1.0;
+        if (saleUnit != storageUnit) {
+          final saleUnits = await txn.query(
+            'product_sale_units',
+            columns: ['conversionToStorage'],
+            where: 'productId = ? AND LOWER(TRIM(saleUnit)) = ?',
+            whereArgs: [productId, saleUnit],
+            limit: 1,
+          );
+          if (saleUnits.isNotEmpty) {
+            conversionToStorage =
+                (saleUnits.first['conversionToStorage'] as num).toDouble();
+          } else {
+            conversionToStorage =
+                (product['conversionFactor'] as num?)?.toDouble() ?? 1;
+          }
+        }
+        final restoredQuantity =
+            (item['quantity'] as num).toDouble() * conversionToStorage;
+        await txn.rawUpdate(
+          'UPDATE products SET quantity = COALESCE(quantity, 0) + ? WHERE id = ?',
+          [restoredQuantity, productId],
+        );
+      }
+
+      if (invoice['paymentMethod'] == 'credit') {
+        final customerId = invoice['customerId'] as int;
+        final invoiceTotal = (invoice['total'] as num?)?.toDouble() ?? 0;
+        await txn.rawUpdate(
+          'UPDATE customers SET currentBalance = COALESCE(currentBalance, 0) - ?, updatedAt = ? WHERE id = ?',
+          [invoiceTotal, DateTime.now().toIso8601String(), customerId],
+        );
+      }
+
+      await txn.delete(
+        'invoice_items',
+        where: 'invoiceId = ?',
+        whereArgs: [invoiceId],
+      );
+      await txn.delete('invoices', where: 'id = ?', whereArgs: [invoiceId]);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getReceiptVouchersForCustomer(
+    int customerId,
+  ) async {
+    final db = await database;
+    return db.rawQuery(
+      '''
+SELECT rv.*, i.invoiceNumber
+FROM receipt_vouchers rv
+LEFT JOIN invoices i ON i.id = rv.invoiceId
+WHERE rv.customerId = ?
+ORDER BY rv.date DESC, rv.id DESC
+''',
+      [customerId],
     );
   }
 

@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import '../../data/repositories/invoice_repository.dart';
 import '../../models/invoice_item_model.dart';
 import '../../models/invoice_model.dart';
-import '../../models/product_model.dart';
-import '../../repositories/product_repository.dart';
 import '../../utils/quantity_formatter.dart';
 import '../../widgets/draggable_dialog.dart';
 
@@ -15,17 +13,12 @@ class InvoicesScreen extends StatefulWidget {
   State<InvoicesScreen> createState() => _InvoicesScreenState();
 }
 
-enum InvoiceFilter {
-  all,
-  today,
-  week,
-  month,
-}
+enum InvoiceFilter { all, today, week, month }
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   final InvoiceRepository _invoiceRepository = InvoiceRepository();
-  final ProductRepository _productRepository = ProductRepository();
-  final DraggableDialogController _dialogController = DraggableDialogController();
+  final DraggableDialogController _dialogController =
+      DraggableDialogController();
 
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _fromDateController = TextEditingController();
@@ -48,7 +41,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Future<void> _loadInvoices() async {
     setState(() => _isLoading = true);
     try {
-      final invoices = await _invoiceRepository.getAllInvoices(limit: 10000, offset: 0);
+      final invoices = await _invoiceRepository.getAllInvoices(
+        limit: 10000,
+        offset: 0,
+      );
       if (!mounted) return;
       setState(() {
         _invoices = invoices;
@@ -90,7 +86,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
       if (_toDate != null) {
         final invoiceDate = DateTime.tryParse(invoice.date);
-        if (invoiceDate == null || invoiceDate.isAfter(_toDate!.add(const Duration(days: 1)).subtract(const Duration(seconds: 1)))) {
+        if (invoiceDate == null ||
+            invoiceDate.isAfter(
+              _toDate!
+                  .add(const Duration(days: 1))
+                  .subtract(const Duration(seconds: 1)),
+            )) {
           return false;
         }
       }
@@ -108,7 +109,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       case InvoiceFilter.today:
         return _sameDay(invoiceDate, now);
       case InvoiceFilter.week:
-        return !invoiceDate.isBefore(now.subtract(const Duration(days: 6))) && !invoiceDate.isAfter(now);
+        return !invoiceDate.isBefore(now.subtract(const Duration(days: 6))) &&
+            !invoiceDate.isAfter(now);
       case InvoiceFilter.month:
         return invoiceDate.year == now.year && invoiceDate.month == now.month;
       case InvoiceFilter.all:
@@ -117,34 +119,44 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   }
 
   bool _sameDay(DateTime first, DateTime second) {
-    return first.year == second.year && first.month == second.month && first.day == second.day;
+    return first.year == second.year &&
+        first.month == second.month &&
+        first.day == second.day;
   }
 
   int get _totalInvoices => _invoices.length;
 
   double get _todaySales {
     final today = DateTime.now();
-    return _invoices.where((invoice) {
-      final date = DateTime.tryParse(invoice.date);
-      return date != null && _sameDay(date, today);
-    }).fold(0.0, (sum, invoice) => sum + invoice.total);
+    return _invoices
+        .where((invoice) {
+          final date = DateTime.tryParse(invoice.date);
+          return date != null && _sameDay(date, today);
+        })
+        .fold(0.0, (sum, invoice) => sum + invoice.total);
   }
 
   double get _weekSales {
     final now = DateTime.now();
     final start = now.subtract(const Duration(days: 6));
-    return _invoices.where((invoice) {
-      final date = DateTime.tryParse(invoice.date);
-      return date != null && !date.isBefore(start) && !date.isAfter(now);
-    }).fold(0.0, (sum, invoice) => sum + invoice.total);
+    return _invoices
+        .where((invoice) {
+          final date = DateTime.tryParse(invoice.date);
+          return date != null && !date.isBefore(start) && !date.isAfter(now);
+        })
+        .fold(0.0, (sum, invoice) => sum + invoice.total);
   }
 
   double get _monthSales {
     final now = DateTime.now();
-    return _invoices.where((invoice) {
-      final date = DateTime.tryParse(invoice.date);
-      return date != null && date.year == now.year && date.month == now.month;
-    }).fold(0.0, (sum, invoice) => sum + invoice.total);
+    return _invoices
+        .where((invoice) {
+          final date = DateTime.tryParse(invoice.date);
+          return date != null &&
+              date.year == now.year &&
+              date.month == now.month;
+        })
+        .fold(0.0, (sum, invoice) => sum + invoice.total);
   }
 
   int get _todayInvoiceCount {
@@ -232,26 +244,45 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       const SizedBox(height: 8),
                       Table(
                         columnWidths: const {
-                          0: FlexColumnWidth(3.0),  // المنتج
-                          1: FlexColumnWidth(1.0),  // الكمية
-                          2: FlexColumnWidth(1.0),  // الوحدة
-                          3: FlexColumnWidth(1.0),  // السعر
-                          4: FlexColumnWidth(1.5),  // الإجمالي
+                          0: FlexColumnWidth(3.0), // المنتج
+                          1: FlexColumnWidth(1.0), // الكمية
+                          2: FlexColumnWidth(1.0), // الوحدة
+                          3: FlexColumnWidth(1.0), // السعر
+                          4: FlexColumnWidth(1.5), // الإجمالي
                         },
                         children: [
                           TableRow(
                             children: [
-                              const Text('المنتج', style: TextStyle(fontWeight: FontWeight.bold)),
-                              const Text('الكمية', style: TextStyle(fontWeight: FontWeight.bold)),
-                              const Text('الوحدة', style: TextStyle(fontWeight: FontWeight.bold)),
-                              const Text('السعر', style: TextStyle(fontWeight: FontWeight.bold)),
-                              const Text('الإجمالي', style: TextStyle(fontWeight: FontWeight.bold)),
+                              const Text(
+                                'المنتج',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const Text(
+                                'الكمية',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const Text(
+                                'الوحدة',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const Text(
+                                'السعر',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const Text(
+                                'الإجمالي',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
                             ],
                           ),
                           ...items.map((item) {
                             return TableRow(
                               children: [
-                                Text(item.productName, maxLines: 3, overflow: TextOverflow.ellipsis),
+                                Text(
+                                  item.productName,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 Text(formatQuantity(item.quantity)),
                                 Text(item.saleUnit),
                                 Text(item.unitPrice.toStringAsFixed(2)),
@@ -262,7 +293,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text('الإجمالي الكلي: ${invoice.total.toStringAsFixed(2)}'),
+                      Text(
+                        'الإجمالي الكلي: ${invoice.total.toStringAsFixed(2)}',
+                      ),
                     ],
                   ),
                 ),
@@ -272,10 +305,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   onPressed: () => Navigator.pop(context),
                   child: const Text('إغلاق'),
                 ),
-                TextButton(
-                  onPressed: () {},
-                  child: const Text('طباعة'),
-                ),
+                TextButton(onPressed: () {}, child: const Text('طباعة')),
               ],
             ),
           ),
@@ -288,7 +318,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('تأكيد الحذف', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'تأكيد الحذف',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: Text('هل تريد حذف الفاتورة رقم ${invoice.invoiceNumber}؟'),
         actions: [
           TextButton(
@@ -307,55 +340,20 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     if (confirmed != true || invoice.id == null) return;
 
     try {
-      final items = await _invoiceRepository.getInvoiceItems(invoice.id!);
-      final products = await _productRepository.getProducts();
-
-      for (final item in items) {
-        Product? product;
-        for (final candidate in products) {
-          if (candidate.id == item.productId) {
-            product = candidate;
-            break;
-          }
-        }
-
-        if (product == null) continue;
-
-        double quantityToRestore = item.quantity;
-        final productStorageUnit = product.storageUnit.trim().toLowerCase();
-        final itemSaleUnit = item.saleUnit.trim().toLowerCase();
-
-        final units = await _productRepository.getSaleUnits(product.id!);
-        var selectedUnit = units.where((u) => u.saleUnit.trim().toLowerCase() == itemSaleUnit).toList();
-        if (selectedUnit.isNotEmpty) {
-          if (selectedUnit.first.saleUnit.trim().toLowerCase() == productStorageUnit) {
-            quantityToRestore = item.quantity;
-          } else {
-            quantityToRestore = item.quantity * selectedUnit.first.conversionToStorage;
-          }
-        } else if (itemSaleUnit != productStorageUnit) {
-          quantityToRestore = item.quantity * product.conversionFactor;
-        }
-
-        product.quantity += quantityToRestore;
-        await _productRepository.updateProduct(product);
-      }
-
-      await _invoiceRepository.deleteInvoiceItemsByInvoiceId(invoice.id!);
-      await _invoiceRepository.deleteInvoice(invoice.id!);
+      await _invoiceRepository.deleteInvoiceWithEffects(invoice.id!);
 
       if (!mounted) return;
       await _loadInvoices();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم الحذف بنجاح')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('تم الحذف بنجاح')));
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطأ في حذف الفاتورة: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطأ في حذف الفاتورة: $e')));
     }
   }
 
@@ -381,16 +379,37 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               children: [
                 Row(
                   children: [
-                    const Text('الفواتير', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'الفواتير',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const Spacer(),
-                    IconButton(onPressed: _loadInvoices, icon: const Icon(Icons.refresh)),
+                    IconButton(
+                      onPressed: _loadInvoices,
+                      icon: const Icon(Icons.refresh),
+                    ),
                     const SizedBox(width: 8),
                     SegmentedButton<InvoiceFilter>(
                       segments: const [
-                        ButtonSegment(value: InvoiceFilter.all, label: Text('الكل')),
-                        ButtonSegment(value: InvoiceFilter.today, label: Text('اليوم')),
-                        ButtonSegment(value: InvoiceFilter.week, label: Text('الأسبوع')),
-                        ButtonSegment(value: InvoiceFilter.month, label: Text('الشهر')),
+                        ButtonSegment(
+                          value: InvoiceFilter.all,
+                          label: Text('الكل'),
+                        ),
+                        ButtonSegment(
+                          value: InvoiceFilter.today,
+                          label: Text('اليوم'),
+                        ),
+                        ButtonSegment(
+                          value: InvoiceFilter.week,
+                          label: Text('الأسبوع'),
+                        ),
+                        ButtonSegment(
+                          value: InvoiceFilter.month,
+                          label: Text('الشهر'),
+                        ),
                       ],
                       selected: {_filter},
                       onSelectionChanged: (value) {
@@ -404,22 +423,54 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           _isGridView = !_isGridView;
                         });
                       },
-                      icon: Icon(_isGridView ? Icons.table_chart : Icons.grid_view),
+                      icon: Icon(
+                        _isGridView ? Icons.table_chart : Icons.grid_view,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(child: _statCard('إجمالي الفواتير', '$_totalInvoices', Icons.receipt_long)),
+                    Expanded(
+                      child: _statCard(
+                        'إجمالي الفواتير',
+                        '$_totalInvoices',
+                        Icons.receipt_long,
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: _statCard('مبيعات اليوم', '${_todaySales.toStringAsFixed(2)}', Icons.today)),
+                    Expanded(
+                      child: _statCard(
+                        'مبيعات اليوم',
+                        '${_todaySales.toStringAsFixed(2)}',
+                        Icons.today,
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: _statCard('مبيعات الأسبوع', '${_weekSales.toStringAsFixed(2)}', Icons.date_range)),
+                    Expanded(
+                      child: _statCard(
+                        'مبيعات الأسبوع',
+                        '${_weekSales.toStringAsFixed(2)}',
+                        Icons.date_range,
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: _statCard('مبيعات الشهر', '${_monthSales.toStringAsFixed(2)}', Icons.calendar_month)),
+                    Expanded(
+                      child: _statCard(
+                        'مبيعات الشهر',
+                        '${_monthSales.toStringAsFixed(2)}',
+                        Icons.calendar_month,
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: _statCard('عدد فواتير اليوم', '$_todayInvoiceCount', Icons.numbers)),
+                    Expanded(
+                      child: _statCard(
+                        'عدد فواتير اليوم',
+                        '$_todayInvoiceCount',
+                        Icons.numbers,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -428,7 +479,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     Expanded(
                       child: TextField(
                         controller: _searchController,
-                        decoration: const InputDecoration(labelText: 'بحث برقم الفاتورة', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
+                        decoration: const InputDecoration(
+                          labelText: 'بحث برقم الفاتورة',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.search),
+                        ),
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
@@ -437,7 +492,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       child: TextField(
                         controller: _fromDateController,
                         readOnly: true,
-                        decoration: const InputDecoration(labelText: 'التاريخ من', border: OutlineInputBorder(), prefixIcon: Icon(Icons.date_range)),
+                        decoration: const InputDecoration(
+                          labelText: 'التاريخ من',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.date_range),
+                        ),
                         onTap: _pickFromDate,
                       ),
                     ),
@@ -446,7 +505,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       child: TextField(
                         controller: _toDateController,
                         readOnly: true,
-                        decoration: const InputDecoration(labelText: 'التاريخ إلى', border: OutlineInputBorder(), prefixIcon: Icon(Icons.date_range)),
+                        decoration: const InputDecoration(
+                          labelText: 'التاريخ إلى',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.date_range),
+                        ),
                         onTap: _pickToDate,
                       ),
                     ),
@@ -454,7 +517,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 ),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: _isLoading ? const Center(child: CircularProgressIndicator()) : (_isGridView ? _buildCards() : _buildTable()),
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : (_isGridView ? _buildCards() : _buildTable()),
                 ),
               ],
             ),
@@ -478,7 +543,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 children: [
                   Text(title, style: const TextStyle(fontSize: 12)),
                   const SizedBox(height: 4),
-                  Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -505,32 +576,52 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               DataColumn(label: Text('الإجراءات')),
             ],
             rows: invoices.map((invoice) {
-              final itemsFuture = _invoiceRepository.getInvoiceItems(invoice.id!);
-              return DataRow(cells: [
-                DataCell(Text(invoice.invoiceNumber)),
-                DataCell(Text(_formatDate(DateTime.tryParse(invoice.date) ?? DateTime.now()))),
-                DataCell(Text(_formatTime(DateTime.tryParse(invoice.date) ?? DateTime.now()))),
-                DataCell(FutureBuilder<List<InvoiceItem>>(
-                  future: itemsFuture,
-                  builder: (context, snapshot) {
-                    final count = snapshot.data?.length ?? 0;
-                    return Text('$count');
-                  },
-                )),
-                DataCell(Text(invoice.total.toStringAsFixed(2))),
-                DataCell(Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove_red_eye),
-                      onPressed: () => _showDetailsDialog(invoice),
+              final itemsFuture = _invoiceRepository.getInvoiceItems(
+                invoice.id!,
+              );
+              return DataRow(
+                cells: [
+                  DataCell(Text(invoice.invoiceNumber)),
+                  DataCell(
+                    Text(
+                      _formatDate(
+                        DateTime.tryParse(invoice.date) ?? DateTime.now(),
+                      ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _confirmDelete(invoice),
+                  ),
+                  DataCell(
+                    Text(
+                      _formatTime(
+                        DateTime.tryParse(invoice.date) ?? DateTime.now(),
+                      ),
                     ),
-                  ],
-                )),
-              ]);
+                  ),
+                  DataCell(
+                    FutureBuilder<List<InvoiceItem>>(
+                      future: itemsFuture,
+                      builder: (context, snapshot) {
+                        final count = snapshot.data?.length ?? 0;
+                        return Text('$count');
+                      },
+                    ),
+                  ),
+                  DataCell(Text(invoice.total.toStringAsFixed(2))),
+                  DataCell(
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_red_eye),
+                          onPressed: () => _showDetailsDialog(invoice),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _confirmDelete(invoice),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
             }).toList(),
           ),
         ),
@@ -556,7 +647,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('الفاتورة ${invoice.invoiceNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  'الفاتورة ${invoice.invoiceNumber}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Text(_formatDateTime(invoice.date)),
                 const SizedBox(height: 8),
@@ -568,7 +665,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   },
                 ),
                 const SizedBox(height: 8),
-                Text('الإجمالي: ${invoice.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                Text(
+                  'الإجمالي: ${invoice.total.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
                 const Spacer(),
                 Align(
                   alignment: Alignment.centerLeft,

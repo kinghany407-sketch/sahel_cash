@@ -9,14 +9,48 @@ class InvoiceRepository {
 
   Future<int> createInvoice(Invoice invoice) async {
     final db = await _databaseHelper.database;
-    return await db.insert('invoices', invoice.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    return await db.insert(
+      'invoices',
+      invoice.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<int> createInvoiceItem(InvoiceItem item) async {
     final db = await _databaseHelper.database;
-    return await db.insert('invoice_items', item.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    return await db.insert(
+      'invoice_items',
+      item.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<int> createInvoiceWithItems({
+    required Invoice invoice,
+    required List<InvoiceItem> items,
+    required Map<int, double> stockReductions,
+  }) {
+    return _databaseHelper.createSalesInvoiceWithItems(
+      invoice: invoice,
+      items: items,
+      stockReductions: stockReductions,
+    );
+  }
+
+  Future<List<Invoice>> getInvoicesForCustomer(
+    int customerId, {
+    bool creditOnly = false,
+  }) async {
+    final db = await _databaseHelper.database;
+    final maps = await db.query(
+      'invoices',
+      where: creditOnly
+          ? 'customerId = ? AND paymentMethod = ?'
+          : 'customerId = ?',
+      whereArgs: creditOnly ? [customerId, 'credit'] : [customerId],
+      orderBy: 'date DESC, id DESC',
+    );
+    return maps.map(Invoice.fromMap).toList();
   }
 
   Future<Invoice?> getInvoiceById(int id) async {
@@ -53,7 +87,10 @@ class InvoiceRepository {
       orderBy: 'id ASC',
     );
 
-    return List.generate(maps.length, (index) => InvoiceItem.fromMap(maps[index]));
+    return List.generate(
+      maps.length,
+      (index) => InvoiceItem.fromMap(maps[index]),
+    );
   }
 
   Future<void> deleteInvoiceItemsByInvoiceId(int invoiceId) async {
@@ -67,10 +104,10 @@ class InvoiceRepository {
 
   Future<void> deleteInvoice(int invoiceId) async {
     final db = await _databaseHelper.database;
-    await db.delete(
-      'invoices',
-      where: 'id = ?',
-      whereArgs: [invoiceId],
-    );
+    await db.delete('invoices', where: 'id = ?', whereArgs: [invoiceId]);
+  }
+
+  Future<void> deleteInvoiceWithEffects(int invoiceId) {
+    return _databaseHelper.deleteSalesInvoiceWithEffects(invoiceId);
   }
 }

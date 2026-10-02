@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../screens/cashier/cashier_screen.dart';
 import '../screens/customers/customers_screen.dart';
+import '../screens/expenses/expenses_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/inventory/inventory_screen.dart';
 import '../screens/invoices/invoices_screen.dart';
 import '../screens/products/products_screen.dart';
+import '../screens/profits/profits_screen.dart';
 import '../screens/purchases/purchase_invoices_list_screen.dart';
 import '../screens/suppliers/suppliers_screen.dart';
 
@@ -297,9 +299,9 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       case DesktopPage.purchaseInvoices:
         return const PurchaseInvoicesListScreen();
       case DesktopPage.profits:
-        return const _PlaceholderScreen(title: 'الأرباح');
+        return const ProfitsScreen();
       case DesktopPage.expenses:
-        return const _PlaceholderScreen(title: 'المصروفات');
+        return const ExpensesScreen();
       case DesktopPage.reports:
         return const _PlaceholderScreen(title: 'التقارير');
       case DesktopPage.invoices:

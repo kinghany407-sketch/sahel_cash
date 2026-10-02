@@ -7,11 +7,13 @@ import 'package:flutter/services.dart';
 
 import '../../data/repositories/invoice_repository.dart';
 import '../../helpers/selling_helper.dart';
+import '../../models/customer_model.dart';
 import '../../models/invoice_item_model.dart';
 import '../../models/invoice_model.dart';
 import '../../models/product_model.dart';
 import '../../models/product_sale_unit_model.dart';
 import '../../repositories/product_repository.dart';
+import '../../repositories/customer_repository.dart';
 import '../../utils/quantity_formatter.dart';
 import '../../widgets/cashier_product_search_card.dart';
 import '../../widgets/draggable_dialog.dart';
@@ -20,6 +22,7 @@ import '../products/app_styles.dart';
 class CartItem {
   final Product product;
   final ProductSaleUnit selectedSaleUnit;
+  final double storageUnitsPerSaleUnit;
   double quantity;
   bool isWholesale;
   SellingMethod sellingMethod;
@@ -28,6 +31,7 @@ class CartItem {
   CartItem({
     required this.product,
     required this.selectedSaleUnit,
+    required this.storageUnitsPerSaleUnit,
     this.quantity = 1,
     this.isWholesale = false,
     this.sellingMethod = SellingMethod.quantity,
@@ -44,7 +48,8 @@ class CartItem {
 
     final saleUnit = selectedSaleUnit.saleUnit.trim().toLowerCase();
     final factor = selectedSaleUnit.conversionToStorage;
-    final saleUnitIsGram = saleUnit.contains('جرام') || saleUnit.contains('gram');
+    final saleUnitIsGram =
+        saleUnit.contains('جرام') || saleUnit.contains('gram');
 
     // Normalize the gram price from the stored conversion factor only when the
     // row is accidentally carrying the storage-scale price (e.g. 120 for kg)
@@ -64,8 +69,15 @@ class CartItem {
   }
 
   double get stockReduction {
-    return quantity * selectedSaleUnit.conversionToStorage;
+    return quantity * storageUnitsPerSaleUnit;
   }
+}
+
+class _CheckoutSelection {
+  final String paymentMethod;
+  final Customer? customer;
+
+  const _CheckoutSelection({required this.paymentMethod, this.customer});
 }
 
 class CashierScreen extends StatefulWidget {
@@ -77,14 +89,17 @@ class CashierScreen extends StatefulWidget {
 
 class _CashierScreenState extends State<CashierScreen> {
   final ProductRepository _repository = ProductRepository();
+  final CustomerRepository _customerRepository = CustomerRepository();
   final InvoiceRepository _invoiceRepository = InvoiceRepository();
   final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
-  final DraggableDialogController _dialogController = DraggableDialogController();
+  final DraggableDialogController _dialogController =
+      DraggableDialogController();
 
   static final List<CartItem> cartItems = [];
+  List<Customer> _customers = [];
   List<Product> searchResults = [];
 
   String searchText = '';
@@ -101,6 +116,28 @@ class _CashierScreenState extends State<CashierScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _loadCustomers();
+  }
+
+  Future<void> _loadCustomers() async {
+    try {
+      final customers = await _customerRepository.getAllCustomers();
+      if (mounted) setState(() => _customers = customers);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('تعذر تحميل العملاء: $error')));
+      }
+    }
+  }
+
+  double _reservedStockForProduct(int productId, {CartItem? excluding}) {
+    return cartItems
+        .where(
+          (item) => item.product.id == productId && !identical(item, excluding),
+        )
+        .fold(0.0, (total, item) => total + item.stockReduction);
   }
 
   void _onScroll() {
@@ -289,8 +326,10 @@ class _CashierScreenState extends State<CashierScreen> {
   bool _isCompatibleWithStorageUnit(Product product, ProductSaleUnit unit) {
     final storageUnit = product.storageUnit.trim().toLowerCase();
     final saleUnit = unit.saleUnit.trim().toLowerCase();
-    
-    print('DEBUG: _isCompatibleWithStorageUnit - storageUnit: $storageUnit, saleUnit: $saleUnit');
+
+    print(
+      'DEBUG: _isCompatibleWithStorageUnit - storageUnit: $storageUnit, saleUnit: $saleUnit',
+    );
 
     if (storageUnit.contains('كيلو') || storageUnit.contains('kg')) {
       final result = saleUnit.contains('كيلو') || saleUnit.contains('kg');
@@ -304,7 +343,8 @@ class _CashierScreenState extends State<CashierScreen> {
       return result;
     }
 
-    final result = saleUnit.contains('قطعة') ||
+    final result =
+        saleUnit.contains('قطعة') ||
         saleUnit.contains('عمود') ||
         saleUnit.contains('عامود') ||
         saleUnit.contains('piece') ||
@@ -373,7 +413,9 @@ class _CashierScreenState extends State<CashierScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
-                  Text('المنتج غير متوفر حالياً. الكمية المتاحة: ${formatQuantity(0.0)}'),
+                  Text(
+                    'المنتج غير متوفر حالياً. الكمية المتاحة: ${formatQuantity(0.0)}',
+                  ),
                 ],
               ),
             ),
@@ -419,8 +461,12 @@ class _CashierScreenState extends State<CashierScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
-                  Text('الكمية المطلوبة: ${formatQuantity(requestedQuantity)} ${product.storageUnit}'),
-                  Text('الكمية المتاحة: ${formatQuantity(availableQuantity)} ${product.storageUnit}'),
+                  Text(
+                    'الكمية المطلوبة: ${formatQuantity(requestedQuantity)} ${product.storageUnit}',
+                  ),
+                  Text(
+                    'الكمية المتاحة: ${formatQuantity(availableQuantity)} ${product.storageUnit}',
+                  ),
                 ],
               ),
             ),
@@ -437,19 +483,27 @@ class _CashierScreenState extends State<CashierScreen> {
   }
 
   Future<void> _openProductSelectionDialog(Product product) async {
-    List<ProductSaleUnit> saleUnits = await _repository.getSaleUnits(product.id ?? 0);
-    print('DEBUG: _openProductSelectionDialog - saleUnits.length from DB: ${saleUnits.length}');
-    print('DEBUG: _openProductSelectionDialog - saleUnits from DB: ${saleUnits.map((u) => u.saleUnit).toList()}');
-    
+    List<ProductSaleUnit> saleUnits = await _repository.getSaleUnits(
+      product.id ?? 0,
+    );
+    print(
+      'DEBUG: _openProductSelectionDialog - saleUnits.length from DB: ${saleUnits.length}',
+    );
+    print(
+      'DEBUG: _openProductSelectionDialog - saleUnits from DB: ${saleUnits.map((u) => u.saleUnit).toList()}',
+    );
+
     print('DEBUG: saleUnits.length before filter: ${saleUnits.length}');
     print('DEBUG: saleUnits: ${saleUnits.map((u) => u.saleUnit).toList()}');
-    
+
     saleUnits = saleUnits
         .where((unit) => _isCompatibleWithStorageUnit(product, unit))
         .toList();
-    
+
     print('DEBUG: saleUnits.length after filter: ${saleUnits.length}');
-    print('DEBUG: filtered saleUnits: ${saleUnits.map((u) => u.saleUnit).toList()}');
+    print(
+      'DEBUG: filtered saleUnits: ${saleUnits.map((u) => u.saleUnit).toList()}',
+    );
 
     if (saleUnits.isEmpty) {
       saleUnits = [_buildFallbackSaleUnit(product)];
@@ -458,8 +512,9 @@ class _CashierScreenState extends State<CashierScreen> {
     if (!mounted) return;
 
     ProductSaleUnit selectedUnit = saleUnits.first;
-    bool isWholesale = selectedUnit.saleUnit.contains('عمود') ||
-                       selectedUnit.saleUnit.contains('عامود');
+    bool isWholesale =
+        selectedUnit.saleUnit.contains('عمود') ||
+        selectedUnit.saleUnit.contains('عامود');
     SellingMethod selectedMethod = selectedUnit.allowSellingByAmount
         ? SellingMethod.quantity
         : SellingMethod.quantity;
@@ -498,12 +553,14 @@ class _CashierScreenState extends State<CashierScreen> {
           height: 600,
           child: StatefulBuilder(
             builder: (context, setDialogState) {
-              final unitPrice = isWholesale && selectedUnit.wholesalePrice != null
+              final unitPrice =
+                  isWholesale && selectedUnit.wholesalePrice != null
                   ? selectedUnit.wholesalePrice!
                   : selectedUnit.retailPrice;
               final quantity = double.tryParse(quantityController.text) ?? 1;
               final amount = double.tryParse(amountController.text) ?? 0;
-              final isKilogramUnit = selectedUnit.saleUnit.trim().toLowerCase().contains('كيلو') ||
+              final isKilogramUnit =
+                  selectedUnit.saleUnit.trim().toLowerCase().contains('كيلو') ||
                   selectedUnit.saleUnit.trim().toLowerCase().contains('kg');
               final displayTotal = selectedMethod == SellingMethod.amount
                   ? amount
@@ -527,14 +584,16 @@ class _CashierScreenState extends State<CashierScreen> {
                     ? double.tryParse(amountController.text) ?? 0
                     : 0.0;
 
-                if (selectedMethod == SellingMethod.amount && parsedAmount <= 0) {
+                if (selectedMethod == SellingMethod.amount &&
+                    parsedAmount <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('أدخل مبلغًا صحيحًا')),
                   );
                   return;
                 }
 
-                if (selectedMethod == SellingMethod.quantity && parsedQuantity <= 0) {
+                if (selectedMethod == SellingMethod.quantity &&
+                    parsedQuantity <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('أدخل كمية صحيحة')),
                   );
@@ -546,23 +605,23 @@ class _CashierScreenState extends State<CashierScreen> {
                   selectedUnit,
                   parsedQuantity,
                 );
-                if (requestedStockReduction > product.quantity) {
+                final reservedStock = _reservedStockForProduct(product.id ?? 0);
+                if (reservedStock + requestedStockReduction >
+                    product.quantity) {
                   _showInsufficientStockDialog(
                     product,
-                    requestedStockReduction,
+                    reservedStock + requestedStockReduction,
                     product.quantity,
                   );
                   return;
                 }
 
-                // خصم المخزون فوراً
-                product.quantity -= requestedStockReduction;
-                await _repository.updateProduct(product);
-
                 final productSaleUnit = selectedUnit;
                 final newCartItem = CartItem(
                   product: product,
                   selectedSaleUnit: productSaleUnit,
+                  storageUnitsPerSaleUnit:
+                      requestedStockReduction / parsedQuantity,
                   quantity: parsedQuantity,
                   isWholesale: isWholesale,
                   sellingMethod: selectedMethod,
@@ -594,7 +653,8 @@ class _CashierScreenState extends State<CashierScreen> {
               return Focus(
                 autofocus: true,
                 onKeyEvent: (node, event) {
-                  if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+                  if (event is KeyDownEvent &&
+                      event.logicalKey == LogicalKeyboardKey.escape) {
                     Navigator.pop(context);
                     return KeyEventResult.handled;
                   }
@@ -621,7 +681,9 @@ class _CashierScreenState extends State<CashierScreen> {
                                         width: 40,
                                         height: 40,
                                         fit: BoxFit.cover,
-                                        errorBuilder: (context, error, stackTrace) => const Icon(Icons.inventory_2),
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const Icon(Icons.inventory_2),
                                       ),
                                     )
                                   else
@@ -632,12 +694,18 @@ class _CashierScreenState extends State<CashierScreen> {
                                       product.name,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
                                     ),
                                   ),
                                   TextButton.icon(
                                     onPressed: () => Navigator.pop(context),
-                                    icon: const Icon(Icons.arrow_back, size: 16),
+                                    icon: const Icon(
+                                      Icons.arrow_back,
+                                      size: 16,
+                                    ),
                                     label: const Text('رجوع'),
                                   ),
                                 ],
@@ -646,7 +714,9 @@ class _CashierScreenState extends State<CashierScreen> {
                               if (saleUnits.length > 1)
                                 DropdownButtonFormField<ProductSaleUnit>(
                                   value: selectedUnit,
-                                  decoration: const InputDecoration(labelText: 'وحدة البيع'),
+                                  decoration: const InputDecoration(
+                                    labelText: 'وحدة البيع',
+                                  ),
                                   items: saleUnits.map((unit) {
                                     return DropdownMenuItem<ProductSaleUnit>(
                                       value: unit,
@@ -657,10 +727,13 @@ class _CashierScreenState extends State<CashierScreen> {
                                     if (value != null) {
                                       setDialogState(() {
                                         selectedUnit = value;
-                                        isWholesale = value.saleUnit.contains('عمود') ||
-                                                      value.saleUnit.contains('عامود');
-                                        if (!selectedUnit.allowSellingByAmount) {
-                                          selectedMethod = SellingMethod.quantity;
+                                        isWholesale =
+                                            value.saleUnit.contains('عمود') ||
+                                            value.saleUnit.contains('عامود');
+                                        if (!selectedUnit
+                                            .allowSellingByAmount) {
+                                          selectedMethod =
+                                              SellingMethod.quantity;
                                         }
                                       });
                                     }
@@ -679,7 +752,11 @@ class _CashierScreenState extends State<CashierScreen> {
                               Row(
                                 textDirection: TextDirection.rtl,
                                 children: [
-                                  const Icon(Icons.inventory_2, size: 20, color: Colors.grey),
+                                  const Icon(
+                                    Icons.inventory_2,
+                                    size: 20,
+                                    color: Colors.grey,
+                                  ),
                                   const SizedBox(width: 8),
                                   Text(
                                     'الكمية في المخزن: ${formatQuantity(product.quantity)} ${product.storageUnit}',
@@ -700,30 +777,32 @@ class _CashierScreenState extends State<CashierScreen> {
                                     product.quantity > product.minQuantity
                                         ? Icons.circle
                                         : product.quantity > 0
-                                            ? Icons.circle
-                                            : Icons.circle,
+                                        ? Icons.circle
+                                        : Icons.circle,
                                     size: 12,
-                                    color: product.quantity > product.minQuantity
+                                    color:
+                                        product.quantity > product.minQuantity
                                         ? Colors.green
                                         : product.quantity > 0
-                                            ? Colors.orange
-                                            : Colors.red,
+                                        ? Colors.orange
+                                        : Colors.red,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
                                     product.quantity > product.minQuantity
                                         ? 'متوفر'
                                         : product.quantity > 0
-                                            ? 'منخفض'
-                                            : 'نفد',
+                                        ? 'منخفض'
+                                        : 'نفد',
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold,
-                                      color: product.quantity > product.minQuantity
+                                      color:
+                                          product.quantity > product.minQuantity
                                           ? Colors.green
                                           : product.quantity > 0
-                                              ? Colors.orange
-                                              : Colors.red,
+                                          ? Colors.orange
+                                          : Colors.red,
                                     ),
                                   ),
                                 ],
@@ -737,8 +816,8 @@ class _CashierScreenState extends State<CashierScreen> {
                                 children: [
                                   const Text('نوع السعر:  '),
                                   // Check if unit is "عمود" or "عامود"
-                                  if (selectedUnit.wholesalePrice != null && 
-                                      !selectedUnit.saleUnit.contains('عمود') && 
+                                  if (selectedUnit.wholesalePrice != null &&
+                                      !selectedUnit.saleUnit.contains('عمود') &&
                                       !selectedUnit.saleUnit.contains('عامود'))
                                     ChoiceChip(
                                       label: const Text('قطاعي'),
@@ -746,7 +825,8 @@ class _CashierScreenState extends State<CashierScreen> {
                                       onSelected: (_) {
                                         setDialogState(() {
                                           isWholesale = false;
-                                          selectedMethod = selectedUnit.allowSellingByAmount
+                                          selectedMethod =
+                                              selectedUnit.allowSellingByAmount
                                               ? SellingMethod.amount
                                               : SellingMethod.quantity;
                                           quantityController.clear();
@@ -761,7 +841,8 @@ class _CashierScreenState extends State<CashierScreen> {
                                       onSelected: (_) {
                                         setDialogState(() {
                                           isWholesale = true;
-                                          selectedMethod = SellingMethod.quantity;
+                                          selectedMethod =
+                                              SellingMethod.quantity;
                                           amountController.clear();
                                         });
                                       },
@@ -782,7 +863,10 @@ class _CashierScreenState extends State<CashierScreen> {
                                 TextField(
                                   controller: quantityController,
                                   focusNode: quantityFocusNode,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -810,7 +894,10 @@ class _CashierScreenState extends State<CashierScreen> {
                                 TextField(
                                   controller: amountController,
                                   focusNode: amountFocusNode,
-                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
@@ -912,11 +999,12 @@ class _CashierScreenState extends State<CashierScreen> {
                                 ),
                               ),
                               onChanged: (value) async {
-                                final results = await _repository.searchProducts(
-                                  query: value,
-                                  limit: _batchSize,
-                                  offset: 0,
-                                );
+                                final results = await _repository
+                                    .searchProducts(
+                                      query: value,
+                                      limit: _batchSize,
+                                      offset: 0,
+                                    );
 
                                 if (!mounted) return;
 
@@ -931,7 +1019,9 @@ class _CashierScreenState extends State<CashierScreen> {
                                   ? Center(
                                       child: Text(
                                         'لا توجد نتائج',
-                                        style: TextStyle(color: Colors.grey.shade600),
+                                        style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                        ),
                                       ),
                                     )
                                   : ListView.builder(
@@ -941,23 +1031,33 @@ class _CashierScreenState extends State<CashierScreen> {
                                         return ListTile(
                                           leading: product.imagePath.isNotEmpty
                                               ? ClipRRect(
-                                                  borderRadius: BorderRadius.circular(4),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
                                                   child: Image.file(
                                                     File(product.imagePath),
                                                     width: 40,
                                                     height: 40,
                                                     fit: BoxFit.cover,
-                                                    errorBuilder: (context, error, stackTrace) =>
-                                                        const Icon(Icons.inventory_2),
+                                                    errorBuilder:
+                                                        (
+                                                          context,
+                                                          error,
+                                                          stackTrace,
+                                                        ) => const Icon(
+                                                          Icons.inventory_2,
+                                                        ),
                                                   ),
                                                 )
                                               : const Icon(Icons.inventory_2),
                                           title: Text(product.name),
                                           subtitle: Text(
-                                              'SKU: ${product.sku} | ${product.sellPrice.toStringAsFixed(2)} ${product.saleUnit}'),
+                                            'SKU: ${product.sku} | ${product.sellPrice.toStringAsFixed(2)} ${product.saleUnit}',
+                                          ),
                                           onTap: () async {
                                             Navigator.pop(dialogContext);
-                                            await _openProductSelectionDialog(product);
+                                            await _openProductSelectionDialog(
+                                              product,
+                                            );
                                           },
                                         );
                                       },
@@ -1033,13 +1133,19 @@ class _CashierScreenState extends State<CashierScreen> {
           height: 600,
           child: StatefulBuilder(
             builder: (context, setDialogState) {
-              final unitPrice = isWholesale && selectedUnit?.wholesalePrice != null
+              final unitPrice =
+                  isWholesale && selectedUnit?.wholesalePrice != null
                   ? selectedUnit!.wholesalePrice!
                   : selectedUnit?.retailPrice ?? 0;
               final quantity = double.tryParse(quantityController.text) ?? 1;
               final amount = double.tryParse(amountController.text) ?? 0;
-              final isKilogramUnit = selectedUnit?.saleUnit.trim().toLowerCase().contains('كيلو') == true ||
-                  selectedUnit?.saleUnit.trim().toLowerCase().contains('kg') == true;
+              final isKilogramUnit =
+                  selectedUnit?.saleUnit.trim().toLowerCase().contains(
+                        'كيلو',
+                      ) ==
+                      true ||
+                  selectedUnit?.saleUnit.trim().toLowerCase().contains('kg') ==
+                      true;
               final displayTotal = selectedMethod == SellingMethod.amount
                   ? amount
                   : quantity * unitPrice;
@@ -1062,14 +1168,16 @@ class _CashierScreenState extends State<CashierScreen> {
                     ? double.tryParse(amountController.text) ?? 0
                     : 0.0;
 
-                if (selectedMethod == SellingMethod.amount && parsedAmount <= 0) {
+                if (selectedMethod == SellingMethod.amount &&
+                    parsedAmount <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('أدخل مبلغًا صحيحًا')),
                   );
                   return;
                 }
 
-                if (selectedMethod == SellingMethod.quantity && parsedQuantity <= 0) {
+                if (selectedMethod == SellingMethod.quantity &&
+                    parsedQuantity <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('أدخل كمية صحيحة')),
                   );
@@ -1081,21 +1189,24 @@ class _CashierScreenState extends State<CashierScreen> {
                   selectedUnit!,
                   parsedQuantity,
                 );
-                if (requestedStockReduction > selectedProduct!.quantity) {
+                final reservedStock = _reservedStockForProduct(
+                  selectedProduct!.id ?? 0,
+                );
+                if (reservedStock + requestedStockReduction >
+                    selectedProduct!.quantity) {
                   await _showInsufficientStockDialog(
                     selectedProduct!,
-                    requestedStockReduction,
+                    reservedStock + requestedStockReduction,
                     selectedProduct!.quantity,
                   );
                   return;
                 }
 
-                selectedProduct!.quantity -= requestedStockReduction;
-                await _repository.updateProduct(selectedProduct!);
-
                 final newCartItem = CartItem(
                   product: selectedProduct!,
                   selectedSaleUnit: selectedUnit!,
+                  storageUnitsPerSaleUnit:
+                      requestedStockReduction / parsedQuantity,
                   quantity: parsedQuantity,
                   isWholesale: isWholesale,
                   sellingMethod: selectedMethod,
@@ -1110,7 +1221,9 @@ class _CashierScreenState extends State<CashierScreen> {
 
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('تم إضافة ${selectedProduct!.name} للفاتورة المعلقة'),
+                    content: Text(
+                      'تم إضافة ${selectedProduct!.name} للفاتورة المعلقة',
+                    ),
                     backgroundColor: AppStyles.successColor,
                     behavior: SnackBarBehavior.floating,
                   ),
@@ -1120,7 +1233,8 @@ class _CashierScreenState extends State<CashierScreen> {
               return Focus(
                 autofocus: true,
                 onKeyEvent: (node, event) {
-                  if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+                  if (event is KeyDownEvent &&
+                      event.logicalKey == LogicalKeyboardKey.escape) {
                     Navigator.pop(context);
                     return KeyEventResult.handled;
                   }
@@ -1143,7 +1257,9 @@ class _CashierScreenState extends State<CashierScreen> {
                                         hintText: 'ابحث عن منتج...',
                                         prefixIcon: const Icon(Icons.search),
                                         border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                       ),
                                       onChanged: (value) async {
@@ -1154,11 +1270,12 @@ class _CashierScreenState extends State<CashierScreen> {
                                           });
                                           return;
                                         }
-                                        final results = await _repository.searchProducts(
-                                          query: value,
-                                          limit: 10,
-                                          offset: 0,
-                                        );
+                                        final results = await _repository
+                                            .searchProducts(
+                                              query: value,
+                                              limit: 10,
+                                              offset: 0,
+                                            );
                                         if (!mounted) return;
                                         setDialogState(() {
                                           pickerResults = results;
@@ -1173,58 +1290,106 @@ class _CashierScreenState extends State<CashierScreen> {
                                                 pickerController.text.isEmpty
                                                     ? 'ابدأ بكتابة اسم المنتج للبحث'
                                                     : 'لا توجد نتائج',
-                                                style: TextStyle(color: Colors.grey.shade600),
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade600,
+                                                ),
                                               ),
                                             )
                                           : ListView.builder(
                                               padding: EdgeInsets.zero,
                                               itemCount: pickerResults.length,
                                               itemBuilder: (context, index) {
-                                                final product = pickerResults[index];
+                                                final product =
+                                                    pickerResults[index];
                                                 return ListTile(
-                                                  leading: product.imagePath.isNotEmpty
+                                                  leading:
+                                                      product
+                                                          .imagePath
+                                                          .isNotEmpty
                                                       ? ClipRRect(
-                                                          borderRadius: BorderRadius.circular(4),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                4,
+                                                              ),
                                                           child: Image.file(
-                                                            File(product.imagePath),
+                                                            File(
+                                                              product.imagePath,
+                                                            ),
                                                             width: 40,
                                                             height: 40,
                                                             fit: BoxFit.cover,
-                                                            errorBuilder: (context, error, stackTrace) =>
-                                                                const Icon(Icons.inventory_2),
+                                                            errorBuilder:
+                                                                (
+                                                                  context,
+                                                                  error,
+                                                                  stackTrace,
+                                                                ) => const Icon(
+                                                                  Icons
+                                                                      .inventory_2,
+                                                                ),
                                                           ),
                                                         )
-                                                      : const Icon(Icons.inventory_2),
+                                                      : const Icon(
+                                                          Icons.inventory_2,
+                                                        ),
                                                   title: Text(product.name),
                                                   subtitle: Text(
-                                                      '${product.sellPrice.toStringAsFixed(2)} ${product.saleUnit}'),
+                                                    '${product.sellPrice.toStringAsFixed(2)} ${product.saleUnit}',
+                                                  ),
                                                   onTap: () async {
-                                                    List<ProductSaleUnit> saleUnits =
-                                                        await _repository.getSaleUnits(product.id ?? 0);
-                                                    print('DEBUG: saleUnits.length before filter: ${saleUnits.length}');
-                                                    print('DEBUG: saleUnits before filter: ${saleUnits.map((u) => u.saleUnit).toList()}');
-                                                    
+                                                    List<ProductSaleUnit>
+                                                    saleUnits =
+                                                        await _repository
+                                                            .getSaleUnits(
+                                                              product.id ?? 0,
+                                                            );
+                                                    print(
+                                                      'DEBUG: saleUnits.length before filter: ${saleUnits.length}',
+                                                    );
+                                                    print(
+                                                      'DEBUG: saleUnits before filter: ${saleUnits.map((u) => u.saleUnit).toList()}',
+                                                    );
+
                                                     saleUnits = saleUnits
-                                                        .where((unit) =>
-                                                            _isCompatibleWithStorageUnit(product, unit))
+                                                        .where(
+                                                          (unit) =>
+                                                              _isCompatibleWithStorageUnit(
+                                                                product,
+                                                                unit,
+                                                              ),
+                                                        )
                                                         .toList();
-                                                    
-                                                    print('DEBUG: saleUnits.length after filter: ${saleUnits.length}');
-                                                    print('DEBUG: saleUnits after filter: ${saleUnits.map((u) => u.saleUnit).toList()}');
-                                                    
+
+                                                    print(
+                                                      'DEBUG: saleUnits.length after filter: ${saleUnits.length}',
+                                                    );
+                                                    print(
+                                                      'DEBUG: saleUnits after filter: ${saleUnits.map((u) => u.saleUnit).toList()}',
+                                                    );
+
                                                     if (saleUnits.isEmpty) {
-                                                      saleUnits = [_buildFallbackSaleUnit(product)];
+                                                      saleUnits = [
+                                                        _buildFallbackSaleUnit(
+                                                          product,
+                                                        ),
+                                                      ];
                                                     }
                                                     if (!mounted) return;
                                                     setDialogState(() {
                                                       selectedProduct = product;
-                                                      availableSaleUnits = saleUnits;
-                                                      selectedUnit = saleUnits.first;
+                                                      availableSaleUnits =
+                                                          saleUnits;
+                                                      selectedUnit =
+                                                          saleUnits.first;
                                                       isWholesale = false;
-                                                      selectedMethod = selectedUnit!.allowSellingByAmount
+                                                      selectedMethod =
+                                                          selectedUnit!
+                                                              .allowSellingByAmount
                                                           ? SellingMethod.amount
-                                                          : SellingMethod.quantity;
-                                                      quantityController.text = '1';
+                                                          : SellingMethod
+                                                                .quantity;
+                                                      quantityController.text =
+                                                          '1';
                                                       amountController.clear();
                                                     });
                                                   },
@@ -1238,21 +1403,32 @@ class _CashierScreenState extends State<CashierScreen> {
                             : SingleChildScrollView(
                                 padding: const EdgeInsets.all(16),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     Row(
                                       textDirection: TextDirection.rtl,
                                       children: [
-                                        if (selectedProduct!.imagePath.isNotEmpty)
+                                        if (selectedProduct!
+                                            .imagePath
+                                            .isNotEmpty)
                                           ClipRRect(
-                                            borderRadius: BorderRadius.circular(4),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
                                             child: Image.file(
                                               File(selectedProduct!.imagePath),
                                               width: 40,
                                               height: 40,
                                               fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) =>
-                                                  const Icon(Icons.inventory_2),
+                                              errorBuilder:
+                                                  (
+                                                    context,
+                                                    error,
+                                                    stackTrace,
+                                                  ) => const Icon(
+                                                    Icons.inventory_2,
+                                                  ),
                                             ),
                                           )
                                         else
@@ -1276,7 +1452,10 @@ class _CashierScreenState extends State<CashierScreen> {
                                               selectedUnit = null;
                                             });
                                           },
-                                          icon: const Icon(Icons.arrow_back, size: 16),
+                                          icon: const Icon(
+                                            Icons.arrow_back,
+                                            size: 16,
+                                          ),
                                           label: const Text('رجوع'),
                                         ),
                                       ],
@@ -1286,7 +1465,11 @@ class _CashierScreenState extends State<CashierScreen> {
                                     Row(
                                       textDirection: TextDirection.rtl,
                                       children: [
-                                        const Icon(Icons.inventory_2, size: 20, color: Colors.grey),
+                                        const Icon(
+                                          Icons.inventory_2,
+                                          size: 20,
+                                          color: Colors.grey,
+                                        ),
                                         const SizedBox(width: 8),
                                         Text(
                                           'الكمية في المخزن: ${formatQuantity(selectedProduct!.quantity)} ${selectedProduct!.storageUnit}',
@@ -1304,33 +1487,39 @@ class _CashierScreenState extends State<CashierScreen> {
                                       textDirection: TextDirection.rtl,
                                       children: [
                                         Icon(
-                                          selectedProduct!.quantity > selectedProduct!.minQuantity
+                                          selectedProduct!.quantity >
+                                                  selectedProduct!.minQuantity
                                               ? Icons.circle
                                               : selectedProduct!.quantity > 0
-                                                  ? Icons.circle
-                                                  : Icons.circle,
+                                              ? Icons.circle
+                                              : Icons.circle,
                                           size: 12,
-                                          color: selectedProduct!.quantity > selectedProduct!.minQuantity
+                                          color:
+                                              selectedProduct!.quantity >
+                                                  selectedProduct!.minQuantity
                                               ? Colors.green
                                               : selectedProduct!.quantity > 0
-                                                  ? Colors.orange
-                                                  : Colors.red,
+                                              ? Colors.orange
+                                              : Colors.red,
                                         ),
                                         const SizedBox(width: 8),
                                         Text(
-                                          selectedProduct!.quantity > selectedProduct!.minQuantity
+                                          selectedProduct!.quantity >
+                                                  selectedProduct!.minQuantity
                                               ? 'متوفر'
                                               : selectedProduct!.quantity > 0
-                                                  ? 'منخفض'
-                                                  : 'نفد',
+                                              ? 'منخفض'
+                                              : 'نفد',
                                           style: TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.bold,
-                                            color: selectedProduct!.quantity > selectedProduct!.minQuantity
+                                            color:
+                                                selectedProduct!.quantity >
+                                                    selectedProduct!.minQuantity
                                                 ? Colors.green
                                                 : selectedProduct!.quantity > 0
-                                                    ? Colors.orange
-                                                    : Colors.red,
+                                                ? Colors.orange
+                                                : Colors.red,
                                           ),
                                         ),
                                       ],
@@ -1339,9 +1528,13 @@ class _CashierScreenState extends State<CashierScreen> {
                                     // وحدة البيع
                                     DropdownButtonFormField<ProductSaleUnit>(
                                       value: selectedUnit,
-                                      decoration: const InputDecoration(labelText: 'وحدة البيع'),
+                                      decoration: const InputDecoration(
+                                        labelText: 'وحدة البيع',
+                                      ),
                                       items: availableSaleUnits.map((unit) {
-                                        return DropdownMenuItem<ProductSaleUnit>(
+                                        return DropdownMenuItem<
+                                          ProductSaleUnit
+                                        >(
                                           value: unit,
                                           child: Text(unit.saleUnit),
                                         );
@@ -1350,10 +1543,17 @@ class _CashierScreenState extends State<CashierScreen> {
                                         if (value != null) {
                                           setDialogState(() {
                                             selectedUnit = value;
-                                            isWholesale = value.saleUnit.contains('عمود') ||
-                                                          value.saleUnit.contains('عامود');
-                                            if (!selectedUnit!.allowSellingByAmount) {
-                                              selectedMethod = SellingMethod.quantity;
+                                            isWholesale =
+                                                value.saleUnit.contains(
+                                                  'عمود',
+                                                ) ||
+                                                value.saleUnit.contains(
+                                                  'عامود',
+                                                );
+                                            if (!selectedUnit!
+                                                .allowSellingByAmount) {
+                                              selectedMethod =
+                                                  SellingMethod.quantity;
                                             }
                                           });
                                         }
@@ -1363,22 +1563,30 @@ class _CashierScreenState extends State<CashierScreen> {
                                     // نوع السعر
                                     Wrap(
                                       textDirection: TextDirection.rtl,
-                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
                                       spacing: 8,
                                       runSpacing: 8,
                                       children: [
                                         const Text('نوع السعر:  '),
                                         // Check if unit is "عمود" or "عامود"
-                                        if (selectedUnit!.wholesalePrice != null && 
-                                            !selectedUnit!.saleUnit.contains('عمود') && 
-                                            !selectedUnit!.saleUnit.contains('عامود'))
+                                        if (selectedUnit!.wholesalePrice !=
+                                                null &&
+                                            !selectedUnit!.saleUnit.contains(
+                                              'عمود',
+                                            ) &&
+                                            !selectedUnit!.saleUnit.contains(
+                                              'عامود',
+                                            ))
                                           ChoiceChip(
                                             label: const Text('قطاعي'),
                                             selected: !isWholesale,
                                             onSelected: (_) {
                                               setDialogState(() {
                                                 isWholesale = false;
-                                                selectedMethod = selectedUnit!.allowSellingByAmount
+                                                selectedMethod =
+                                                    selectedUnit!
+                                                        .allowSellingByAmount
                                                     ? SellingMethod.amount
                                                     : SellingMethod.quantity;
                                                 quantityController.clear();
@@ -1386,19 +1594,22 @@ class _CashierScreenState extends State<CashierScreen> {
                                               });
                                             },
                                           ),
-                                        if (selectedUnit!.wholesalePrice != null)
+                                        if (selectedUnit!.wholesalePrice !=
+                                            null)
                                           ChoiceChip(
                                             label: const Text('جملة'),
                                             selected: isWholesale,
                                             onSelected: (_) {
                                               setDialogState(() {
                                                 isWholesale = true;
-                                                selectedMethod = SellingMethod.quantity;
+                                                selectedMethod =
+                                                    SellingMethod.quantity;
                                                 amountController.clear();
                                               });
                                             },
                                           ),
-                                        if (selectedUnit!.wholesalePrice == null)
+                                        if (selectedUnit!.wholesalePrice ==
+                                            null)
                                           const Text('قطاعي'),
                                       ],
                                     ),
@@ -1412,11 +1623,15 @@ class _CashierScreenState extends State<CashierScreen> {
                                       const Text('طريقة البيع: بالكمية'),
                                     const SizedBox(height: 12),
                                     // الحقل المناسب
-                                    if (selectedMethod == SellingMethod.quantity)
+                                    if (selectedMethod ==
+                                        SellingMethod.quantity)
                                       TextField(
                                         controller: quantityController,
                                         focusNode: quantityFocusNode,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
                                         style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
@@ -1429,8 +1644,12 @@ class _CashierScreenState extends State<CashierScreen> {
                                             fontWeight: FontWeight.bold,
                                           ),
                                           border: OutlineInputBorder(
-                                            borderSide: const BorderSide(width: 2),
-                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: const BorderSide(
+                                              width: 2,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
                                           filled: true,
                                           fillColor: Colors.grey.shade50,
@@ -1444,7 +1663,10 @@ class _CashierScreenState extends State<CashierScreen> {
                                       TextField(
                                         controller: amountController,
                                         focusNode: amountFocusNode,
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
                                         style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
@@ -1457,8 +1679,12 @@ class _CashierScreenState extends State<CashierScreen> {
                                             fontWeight: FontWeight.bold,
                                           ),
                                           border: OutlineInputBorder(
-                                            borderSide: const BorderSide(width: 2),
-                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: const BorderSide(
+                                              width: 2,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
                                           filled: true,
                                           fillColor: Colors.grey.shade50,
@@ -1525,10 +1751,14 @@ class _CashierScreenState extends State<CashierScreen> {
       newQuantity,
     );
 
-    if (newStockReduction > item.product.quantity) {
+    final reservedByOtherItems = _reservedStockForProduct(
+      item.product.id ?? 0,
+      excluding: item,
+    );
+    if (reservedByOtherItems + newStockReduction > item.product.quantity) {
       await _showInsufficientStockDialog(
         item.product,
-        newStockReduction,
+        reservedByOtherItems + newStockReduction,
         item.product.quantity,
       );
       return;
@@ -1537,7 +1767,10 @@ class _CashierScreenState extends State<CashierScreen> {
     setState(() {
       if (item.sellingMethod == SellingMethod.amount) {
         item.amount += item.unitPrice;
-        item.quantity = SellingHelper.calculateQuantityFromAmount(item.amount, item.unitPrice);
+        item.quantity = SellingHelper.calculateQuantityFromAmount(
+          item.amount,
+          item.unitPrice,
+        );
       } else {
         item.quantity = newQuantity;
       }
@@ -1549,7 +1782,10 @@ class _CashierScreenState extends State<CashierScreen> {
       if (item.sellingMethod == SellingMethod.amount) {
         if (item.amount > item.unitPrice) {
           item.amount -= item.unitPrice;
-          item.quantity = SellingHelper.calculateQuantityFromAmount(item.amount, item.unitPrice);
+          item.quantity = SellingHelper.calculateQuantityFromAmount(
+            item.amount,
+            item.unitPrice,
+          );
         } else {
           cartItems.remove(item);
         }
@@ -1611,12 +1847,10 @@ class _CashierScreenState extends State<CashierScreen> {
                       // Content area
                       Expanded(
                         child: _isLoading
-                            ? const Center(
-                                child: CircularProgressIndicator(),
-                              )
+                            ? const Center(child: CircularProgressIndicator())
                             : searchResults.isEmpty
-                                ? _buildEmptyState()
-                                : _buildSearchResults(),
+                            ? _buildEmptyState()
+                            : _buildSearchResults(),
                       ),
                     ],
                   ),
@@ -1702,10 +1936,7 @@ class _CashierScreenState extends State<CashierScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppStyles.primaryColor,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           ),
         ),
         const SizedBox(width: 8),
@@ -1725,10 +1956,7 @@ class _CashierScreenState extends State<CashierScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: AppStyles.primaryColor,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           ),
         ),
         const SizedBox(width: 8),
@@ -1746,18 +1974,11 @@ class _CashierScreenState extends State<CashierScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search,
-            size: 64,
-            color: Colors.grey.shade300,
-          ),
+          Icon(Icons.search, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           const Text(
             'ابدأ البحث عن منتج',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey,
-            ),
+            style: TextStyle(fontSize: 18, color: Colors.grey),
           ),
         ],
       ),
@@ -1875,9 +2096,7 @@ class _CashierScreenState extends State<CashierScreen> {
               // Cart header
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppStyles.primaryColor,
-                ),
+                decoration: BoxDecoration(color: AppStyles.primaryColor),
                 child: Row(
                   textDirection: TextDirection.rtl,
                   children: [
@@ -1893,7 +2112,10 @@ class _CashierScreenState extends State<CashierScreen> {
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
@@ -1945,9 +2167,7 @@ class _CashierScreenState extends State<CashierScreen> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade300),
-                  ),
+                  border: Border(top: BorderSide(color: Colors.grey.shade300)),
                 ),
                 child: SizedBox(
                   width: double.infinity,
@@ -2006,7 +2226,13 @@ class _CashierScreenState extends State<CashierScreen> {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
-                          child: const Text('إتمام البيع', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          child: const Text(
+                            'إتمام البيع',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -2084,10 +2310,7 @@ class _CashierScreenState extends State<CashierScreen> {
                 ),
                 Text(
                   '${item.selectedSaleUnit.saleUnit} ${item.unitPrice.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -2104,7 +2327,10 @@ class _CashierScreenState extends State<CashierScreen> {
                   icon: const Icon(Icons.remove, size: 12),
                   onPressed: () => _decreaseQuantity(item),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                  constraints: const BoxConstraints(
+                    minWidth: 22,
+                    minHeight: 22,
+                  ),
                   visualDensity: VisualDensity.compact,
                 ),
                 Text(
@@ -2119,7 +2345,10 @@ class _CashierScreenState extends State<CashierScreen> {
                   icon: const Icon(Icons.add, size: 12),
                   onPressed: () => _increaseQuantity(item),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                  constraints: const BoxConstraints(
+                    minWidth: 22,
+                    minHeight: 22,
+                  ),
                   visualDensity: VisualDensity.compact,
                 ),
               ],
@@ -2170,52 +2399,202 @@ class _CashierScreenState extends State<CashierScreen> {
     }
 
     final total = _calculateTotal();
-    await _confirmCheckout(total);
+    final selection = await _showCheckoutDialog(total);
+    if (selection == null) return;
+    await _confirmCheckout(total, selection);
   }
 
-  Future<void> _confirmCheckout(double total) async {
+  Future<_CheckoutSelection?> _showCheckoutDialog(double total) async {
+    var paymentMethod = 'cash';
+    Customer? selectedCustomer;
+    String? errorMessage;
+
+    return showGeneralDialog<_CheckoutSelection>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
+          Directionality(
+            textDirection: TextDirection.rtl,
+            child: DraggableDialog(
+              controller: _dialogController,
+              title: 'اعتماد الفاتورة',
+              width: 520,
+              height: 480,
+              child: StatefulBuilder(
+                builder: (context, setDialogState) => Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'الإجمالي: ${total.toStringAsFixed(2)} ج.م',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('طريقة الدفع'),
+                      RadioGroup<String>(
+                        groupValue: paymentMethod,
+                        onChanged: (value) => setDialogState(() {
+                          paymentMethod = value ?? 'cash';
+                          errorMessage = null;
+                        }),
+                        child: const Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                value: 'cash',
+                                title: Text('نقدي'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            Expanded(
+                              child: RadioListTile<String>(
+                                value: 'credit',
+                                title: Text('آجل'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DropdownButtonFormField<Customer>(
+                        initialValue: selectedCustomer,
+                        decoration: const InputDecoration(
+                          labelText: 'العميل (إلزامي للآجل)',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: [
+                          const DropdownMenuItem<Customer>(
+                            value: null,
+                            child: Text('بدون عميل'),
+                          ),
+                          ..._customers.map(
+                            (customer) => DropdownMenuItem<Customer>(
+                              value: customer,
+                              child: Text(customer.name),
+                            ),
+                          ),
+                        ],
+                        onChanged: (customer) => setDialogState(() {
+                          selectedCustomer = customer;
+                          errorMessage = null;
+                        }),
+                      ),
+                      if (errorMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          errorMessage!,
+                          style: const TextStyle(color: AppStyles.errorColor),
+                        ),
+                      ],
+                      const Spacer(),
+                      FilledButton.icon(
+                        onPressed: () {
+                          if (paymentMethod == 'credit' &&
+                              selectedCustomer?.id == null) {
+                            setDialogState(() {
+                              errorMessage = 'اختر العميل لإتمام البيع الآجل';
+                            });
+                            return;
+                          }
+                          Navigator.of(dialogContext).pop(
+                            _CheckoutSelection(
+                              paymentMethod: paymentMethod,
+                              customer: selectedCustomer,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.check),
+                        label: const Text('اعتماد الفاتورة'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+    );
+  }
+
+  Future<void> _confirmCheckout(
+    double total,
+    _CheckoutSelection selection,
+  ) async {
     final invoiceNumber = _generateInvoiceNumber();
     final now = DateTime.now().toIso8601String();
     final invoice = Invoice(
       invoiceNumber: invoiceNumber,
       date: now,
       total: total,
-      paymentMethod: 'cash',
-      customerId: null,
+      paymentMethod: selection.paymentMethod,
+      customerId: selection.customer?.id,
       notes: null,
     );
 
-    final invoiceId = await _invoiceRepository.createInvoice(invoice);
-
-    // إنشاء نسخة من cartItems للتكرار عليها
     final itemsToProcess = List<CartItem>.from(cartItems);
-
+    final invoiceItems = itemsToProcess
+        .map(
+          (item) => InvoiceItem(
+            invoiceId: 0,
+            productId: item.product.id ?? 0,
+            productName: item.product.name,
+            saleUnit: item.selectedSaleUnit.saleUnit,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: item.total,
+            isWholesale: item.isWholesale,
+          ),
+        )
+        .toList();
+    final stockReductions = <int, double>{};
     for (final item in itemsToProcess) {
-      final invoiceItem = InvoiceItem(
-        invoiceId: invoiceId,
-        productId: item.product.id ?? 0,
-        productName: item.product.name,
-        saleUnit: item.selectedSaleUnit.saleUnit,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        total: item.total,
-        isWholesale: item.isWholesale,
+      final productId = item.product.id;
+      if (productId == null) continue;
+      stockReductions.update(
+        productId,
+        (reserved) => reserved + item.stockReduction,
+        ifAbsent: () => item.stockReduction,
       );
-
-      await _invoiceRepository.createInvoiceItem(invoiceItem);
     }
 
-    setState(() {
-      cartItems.clear();
-    });
+    try {
+      await _invoiceRepository.createInvoiceWithItems(
+        invoice: invoice,
+        items: invoiceItems,
+        stockReductions: stockReductions,
+      );
 
-    await _showSuccessDialog(invoiceNumber);
+      for (final item in itemsToProcess) {
+        item.product.quantity -= item.stockReduction;
+      }
+      if (mounted) {
+        setState(() => cartItems.clear());
+        if (selection.paymentMethod == 'credit') await _loadCustomers();
+        await _showSuccessDialog(invoiceNumber);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر اعتماد الفاتورة: $error'),
+            backgroundColor: AppStyles.errorColor,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   String _generateInvoiceNumber() {
     final now = DateTime.now();
-    final datePart = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
-    final timePart = '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
+    final datePart =
+        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    final timePart =
+        '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
     return '$datePart-$timePart';
   }
 

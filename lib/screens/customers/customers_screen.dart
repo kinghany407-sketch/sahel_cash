@@ -16,7 +16,8 @@ class CustomersScreen extends StatefulWidget {
 
 class _CustomersScreenState extends State<CustomersScreen> {
   final CustomerRepository _repository = CustomerRepository();
-  final DraggableDialogController _dialogController = DraggableDialogController();
+  final DraggableDialogController _dialogController =
+      DraggableDialogController();
 
   final List<Customer> customers = [];
   final TextEditingController searchController = TextEditingController();
@@ -100,7 +101,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
       context: context,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (context, animation, secondaryAnimation) => const AddCustomerDialog(),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          const AddCustomerDialog(),
     );
 
     if (customer == null) return;
@@ -122,7 +124,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
       context: context,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (context, animation, secondaryAnimation) => AddCustomerDialog(customer: customer),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          AddCustomerDialog(customer: customer),
     );
 
     if (updatedCustomer == null) return;
@@ -144,8 +147,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
       context: context,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (context, animation, secondaryAnimation) => CustomerStatementDialog(customer: customer),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          CustomerStatementDialog(customer: customer),
     );
+    if (mounted) await _loadCustomers();
   }
 
   Future<void> _deleteCustomer(Customer customer) async {
@@ -218,7 +223,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.people, size: 28, color: AppStyles.primaryColor),
+                    const Icon(
+                      Icons.people,
+                      size: 28,
+                      color: AppStyles.primaryColor,
+                    ),
                     const SizedBox(width: 12),
                     const Expanded(
                       child: Text(
@@ -241,9 +250,15 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         decoration: InputDecoration(
                           hintText: 'بحث عن عميل...',
                           hintStyle: TextStyle(color: Colors.grey.shade500),
-                          prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Colors.grey,
+                          ),
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                         ),
                         onChanged: (value) {
                           searchText = value;
@@ -259,8 +274,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : customers.isEmpty
-                        ? _buildEmptyState()
-                        : _buildCustomerList(),
+                    ? _buildEmptyState()
+                    : _buildCustomerList(),
               ),
             ],
           ),
@@ -279,26 +294,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.people_outline,
-            size: 80,
-            color: Colors.grey.shade300,
-          ),
+          Icon(Icons.people_outline, size: 80, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           Text(
             'لا يوجد عملاء',
-            style: TextStyle(
-              fontSize: 20,
-              color: Colors.grey.shade500,
-            ),
+            style: TextStyle(fontSize: 20, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 8),
           Text(
             'اضغط على + لإضافة عميل جديد',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade400,
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade400),
           ),
         ],
       ),
@@ -324,9 +329,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
