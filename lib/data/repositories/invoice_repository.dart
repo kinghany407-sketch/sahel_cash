@@ -78,6 +78,21 @@ class InvoiceRepository {
     return List.generate(maps.length, (index) => Invoice.fromMap(maps[index]));
   }
 
+  Future<List<Invoice>> getTodayInvoices() async {
+    final now = DateTime.now();
+    final todayStr =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final db = await _databaseHelper.database;
+    final maps = await db.query(
+      'invoices',
+      where: 'date LIKE ?',
+      whereArgs: ['$todayStr%'],
+      orderBy: 'id DESC',
+    );
+
+    return List.generate(maps.length, (index) => Invoice.fromMap(maps[index]));
+  }
+
   Future<List<InvoiceItem>> getInvoiceItems(int invoiceId) async {
     final db = await _databaseHelper.database;
     final maps = await db.query(

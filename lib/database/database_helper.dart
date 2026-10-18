@@ -59,12 +59,26 @@ class DatabaseHelper {
       }
     }
 
-    return await openDatabase(
+    final db = await openDatabase(
       newPath,
-      version: 14,
+      version: 19,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
+    await _ensureUsersTable(db);
+    return db;
+  }
+
+  Future<String> getDatabasePath() async {
+    final appDocDir = await getApplicationDocumentsDirectory();
+    return join(appDocDir.path, 'sahel_cash.db');
+  }
+
+  Future<void> close() async {
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -226,47 +240,56 @@ CREATE TABLE purchase_invoice_items(
   FOREIGN KEY (productId) REFERENCES products(id)
 )
 ''');
+
+    await _ensureUsersTable(db);
+  }
+
+  Future<bool> _columnExists(Database db, String table, String column) async {
+    final result = await db.rawQuery(
+      "PRAGMA table_info($table)",
+    );
+    for (final row in result) {
+      if (row['name'] == column) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _safeAddColumn(Database db, String table, String column, String definition) async {
+    if (await _columnExists(db, table, column)) {
+      return; // Column already exists, skip
+    }
+    await db.execute("ALTER TABLE $table ADD COLUMN $column $definition");
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      await db.execute("ALTER TABLE products ADD COLUMN category TEXT");
-      await db.execute("ALTER TABLE products ADD COLUMN brand TEXT");
-      await db.execute("ALTER TABLE products ADD COLUMN description TEXT");
-      await db.execute("ALTER TABLE products ADD COLUMN imagePath TEXT");
-      await db.execute("ALTER TABLE products ADD COLUMN unit TEXT");
-      await db.execute(
-        "ALTER TABLE products ADD COLUMN unitsPerPackage INTEGER DEFAULT 1",
-      );
+      await _safeAddColumn(db, 'products', 'category', 'TEXT');
+      await _safeAddColumn(db, 'products', 'brand', 'TEXT');
+      await _safeAddColumn(db, 'products', 'description', 'TEXT');
+      await _safeAddColumn(db, 'products', 'imagePath', 'TEXT');
+      await _safeAddColumn(db, 'products', 'unit', 'TEXT');
+      await _safeAddColumn(db, 'products', 'unitsPerPackage', 'INTEGER DEFAULT 1');
     }
 
     if (oldVersion < 3) {
-      await db.execute(
-        "ALTER TABLE products ADD COLUMN supplier TEXT DEFAULT ''",
-      );
+      await _safeAddColumn(db, 'products', 'supplier', "TEXT DEFAULT ''");
     }
 
     if (oldVersion < 4) {
-      await db.execute(
-        "ALTER TABLE products ADD COLUMN purchaseUnit TEXT DEFAULT 'قطعة'",
-      );
-      await db.execute(
-        "ALTER TABLE products ADD COLUMN saleUnit TEXT DEFAULT 'قطعة'",
-      );
-      await db.execute(
-        "ALTER TABLE products ADD COLUMN conversionFactor REAL DEFAULT 1",
-      );
+      await _safeAddColumn(db, 'products', 'purchaseUnit', "TEXT DEFAULT 'قطعة'");
+      await _safeAddColumn(db, 'products', 'saleUnit', "TEXT DEFAULT 'قطعة'");
+      await _safeAddColumn(db, 'products', 'conversionFactor', 'REAL DEFAULT 1');
     }
 
     if (oldVersion < 5) {
-      await db.execute(
-        "ALTER TABLE products ADD COLUMN storageUnit TEXT DEFAULT 'قطعة'",
-      );
+      await _safeAddColumn(db, 'products', 'storageUnit', "TEXT DEFAULT 'قطعة'");
     }
 
     if (oldVersion < 6) {
       await db.execute('''
-CREATE TABLE product_sale_units(
+CREATE TABLE IF NOT EXISTS product_sale_units(
 id INTEGER PRIMARY KEY AUTOINCREMENT,
 productId INTEGER NOT NULL,
 saleUnit TEXT NOT NULL,
@@ -281,9 +304,7 @@ UNIQUE(productId, saleUnit)
     }
 
     if (oldVersion < 7) {
-      await db.execute(
-        "ALTER TABLE products ADD COLUMN unitsPerPurchaseUnit INTEGER DEFAULT 1",
-      );
+      await _safeAddColumn(db, 'products', 'unitsPerPurchaseUnit', 'INTEGER DEFAULT 1');
     }
 
     if (oldVersion < 8) {
@@ -381,15 +402,9 @@ CREATE TABLE IF NOT EXISTS purchase_invoice_items(
     }
 
     if (oldVersion < 12) {
-      await db.execute(
-        "ALTER TABLE purchase_invoice_items ADD COLUMN purchaseUnit TEXT NOT NULL DEFAULT 'قطعة'",
-      );
-      await db.execute(
-        'ALTER TABLE purchase_invoice_items ADD COLUMN conversionFactor REAL NOT NULL DEFAULT 1',
-      );
-      await db.execute(
-        'ALTER TABLE purchase_invoice_items ADD COLUMN storageQuantity REAL NOT NULL DEFAULT 0',
-      );
+      await _safeAddColumn(db, 'purchase_invoice_items', 'purchaseUnit', "TEXT NOT NULL DEFAULT 'قطعة'");
+      await _safeAddColumn(db, 'purchase_invoice_items', 'conversionFactor', 'REAL NOT NULL DEFAULT 1');
+      await _safeAddColumn(db, 'purchase_invoice_items', 'storageQuantity', 'REAL NOT NULL DEFAULT 0');
       await db.execute('''
 UPDATE purchase_invoice_items
 SET storageQuantity = quantity
@@ -425,6 +440,76 @@ CREATE TABLE IF NOT EXISTS expenses(
   createdAt TEXT NOT NULL
 )
 ''');
+    }
+
+    if (oldVersion < 15) {
+      await _safeAddColumn(db, 'invoices', 'cashierId', 'INTEGER NULL');
+      await _safeAddColumn(db, 'invoices', 'cashierName', 'TEXT NULL');
+    }
+
+    if (oldVersion < 16) {
+      await _safeAddColumn(db, 'invoices', 'discount', 'REAL DEFAULT 0.0');
+      await _safeAddColumn(db, 'invoices', 'discountType', 'TEXT NULL');
+    }
+
+    if (oldVersion < 17) {
+      await _safeAddColumn(db, 'invoices', 'paidAmount', 'REAL DEFAULT 0.0');
+      await _safeAddColumn(db, 'invoices', 'changeAmount', 'REAL DEFAULT 0.0');
+    }
+
+    if (oldVersion < 19) {
+      await _ensureUsersTable(db);
+    }
+  }
+
+  Future<void> _ensureUsersTable(Database db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS users(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  fullName TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'cashier',
+  isActive INTEGER NOT NULL DEFAULT 1,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+)
+''');
+
+    final adminList = await db.query(
+      'users',
+      where: 'username = ?',
+      whereArgs: ['admin'],
+    );
+    if (adminList.isEmpty) {
+      final now = DateTime.now().toIso8601String();
+      await db.insert('users', {
+        'username': 'admin',
+        'password': 'admin123',
+        'fullName': 'مدير النظام',
+        'role': 'admin',
+        'isActive': 1,
+        'createdAt': now,
+        'updatedAt': now,
+      });
+    }
+
+    final cashierList = await db.query(
+      'users',
+      where: 'username = ?',
+      whereArgs: ['cashier'],
+    );
+    if (cashierList.isEmpty) {
+      final now = DateTime.now().toIso8601String();
+      await db.insert('users', {
+        'username': 'cashier',
+        'password': '123',
+        'fullName': 'كاشير 1',
+        'role': 'cashier',
+        'isActive': 1,
+        'createdAt': now,
+        'updatedAt': now,
+      });
     }
   }
 

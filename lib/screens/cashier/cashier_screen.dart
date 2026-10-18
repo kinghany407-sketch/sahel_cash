@@ -17,7 +17,9 @@ import '../../repositories/customer_repository.dart';
 import '../../utils/quantity_formatter.dart';
 import '../../widgets/cashier_product_search_card.dart';
 import '../../widgets/draggable_dialog.dart';
+import '../invoices/thermal_receipt_dialog.dart';
 import '../products/app_styles.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CartItem {
   final Product product;
@@ -111,6 +113,7 @@ class _CashierScreenState extends State<CashierScreen> {
   String? _currentSearchQuery;
   bool _isImageSearchMode = false;
   double _cartSidebarWidth = 300.0;
+  bool _showSearchOverlay = false;
 
   @override
   void initState() {
@@ -154,6 +157,7 @@ class _CashierScreenState extends State<CashierScreen> {
         _currentSearchQuery = null;
         _currentOffset = 0;
         _isImageSearchMode = false;
+        _showSearchOverlay = false;
       });
       return;
     }
@@ -166,6 +170,7 @@ class _CashierScreenState extends State<CashierScreen> {
         searchResults.clear();
         _isLoading = true;
         _isImageSearchMode = false;
+        _showSearchOverlay = false;
       });
     } else {
       setState(() => _isLoadingMore = true);
@@ -189,6 +194,7 @@ class _CashierScreenState extends State<CashierScreen> {
         _currentOffset += results.length;
         _isLoading = false;
         _isLoadingMore = results.length >= _batchSize;
+        _showSearchOverlay = results.isNotEmpty && _currentOffset == 0;
       });
     } catch (e) {
       if (mounted) {
@@ -204,6 +210,7 @@ class _CashierScreenState extends State<CashierScreen> {
         setState(() {
           _isLoading = false;
           _isLoadingMore = false;
+          _showSearchOverlay = false;
         });
       }
     }
@@ -266,6 +273,7 @@ class _CashierScreenState extends State<CashierScreen> {
         _currentOffset = 0;
         searchResults.clear();
         _isLoading = true;
+        _showSearchOverlay = false;
       });
 
       // Search for products with images using pagination
@@ -282,6 +290,7 @@ class _CashierScreenState extends State<CashierScreen> {
         _isLoading = false;
         _isSearchingByImage = false;
         _isLoadingMore = imageResults.length >= _batchSize;
+        _showSearchOverlay = imageResults.isNotEmpty;
       });
 
       if (imageResults.isEmpty) {
@@ -300,6 +309,7 @@ class _CashierScreenState extends State<CashierScreen> {
         setState(() {
           _isSearchingByImage = false;
           _isLoading = false;
+          _showSearchOverlay = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -379,6 +389,10 @@ class _CashierScreenState extends State<CashierScreen> {
   }
 
   Future<void> _handleProductCardTap(Product product) async {
+    setState(() {
+      _showSearchOverlay = false;
+    });
+
     if (product.quantity <= 0) {
       await _showNoStockDialog(product);
       return;
@@ -1740,6 +1754,9 @@ class _CashierScreenState extends State<CashierScreen> {
   }
 
   void _addToCart(Product product) {
+    setState(() {
+      _showSearchOverlay = false;
+    });
     _openProductSelectionDialog(product);
   }
 
@@ -1813,6 +1830,7 @@ class _CashierScreenState extends State<CashierScreen> {
       _currentSearchQuery = null;
       _currentOffset = 0;
       _isImageSearchMode = false;
+      _showSearchOverlay = false;
     });
   }
 
@@ -1838,20 +1856,47 @@ class _CashierScreenState extends State<CashierScreen> {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Column(
+                  child: Stack(
                     children: [
-                      // Header with search
-                      _buildSearchSection(),
-                      const SizedBox(height: 12),
+                      Column(
+                        children: [
+                          // Header with search
+                          _buildSearchSection(),
+                          const SizedBox(height: 12),
 
-                      // Content area
-                      Expanded(
-                        child: _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : searchResults.isEmpty
-                            ? _buildEmptyState()
-                            : _buildSearchResults(),
+                          // Empty state or space for cart
+                          Expanded(
+                            child: _isLoading
+                                ? const Center(child: CircularProgressIndicator())
+                                : _buildEmptyState(),
+                          ),
+                        ],
                       ),
+
+                      // Search results overlay
+                      if (_showSearchOverlay && searchResults.isNotEmpty)
+                        Positioned(
+                          top: 60,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _showSearchOverlay = false;
+                              });
+                            },
+                            child: Container(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              child: Column(
+                                children: [
+                                  const SizedBox(height: 12),
+                                  _buildSearchResultsOverlay(),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1905,10 +1950,25 @@ class _CashierScreenState extends State<CashierScreen> {
                 searchText = value;
               });
               _performSearch(value);
+              if (value.isNotEmpty && searchResults.isNotEmpty) {
+                _showSearchOverlay = true;
+              } else {
+                _showSearchOverlay = false;
+              }
+            },
+            onTap: () {
+              if (searchText.isNotEmpty && searchResults.isNotEmpty) {
+                setState(() {
+                  _showSearchOverlay = true;
+                });
+              }
             },
             onSubmitted: (value) {
               if (searchResults.isNotEmpty) {
                 _addToCart(searchResults.first);
+                setState(() {
+                  _showSearchOverlay = false;
+                });
               }
             },
           ),
@@ -2010,6 +2070,82 @@ class _CashierScreenState extends State<CashierScreen> {
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
               ),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: GridView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(8),
+              itemCount: searchResults.length + (_isLoadingMore ? 1 : 0),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 200,
+                childAspectRatio: 0.75,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemBuilder: (context, index) {
+                if (index == searchResults.length) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+
+                final product = searchResults[index];
+                return CashierProductSearchCard(
+                  product: product,
+                  onTap: () => _handleProductCardTap(product),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResultsOverlay() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 300),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Text(
+                  'نتائج البحث (${searchResults.length})',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () {
+                    setState(() {
+                      _showSearchOverlay = false;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
           const Divider(height: 1),
@@ -2526,6 +2662,12 @@ class _CashierScreenState extends State<CashierScreen> {
   ) async {
     final invoiceNumber = _generateInvoiceNumber();
     final now = DateTime.now().toIso8601String();
+
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('user_id');
+    final userName =
+        prefs.getString('user_fullName') ?? prefs.getString('user_username');
+
     final invoice = Invoice(
       invoiceNumber: invoiceNumber,
       date: now,
@@ -2533,6 +2675,8 @@ class _CashierScreenState extends State<CashierScreen> {
       paymentMethod: selection.paymentMethod,
       customerId: selection.customer?.id,
       notes: null,
+      cashierId: userId,
+      cashierName: userName,
     );
 
     final itemsToProcess = List<CartItem>.from(cartItems);
@@ -2562,11 +2706,16 @@ class _CashierScreenState extends State<CashierScreen> {
     }
 
     try {
-      await _invoiceRepository.createInvoiceWithItems(
+      final invoiceId = await _invoiceRepository.createInvoiceWithItems(
         invoice: invoice,
         items: invoiceItems,
         stockReductions: stockReductions,
       );
+
+      final savedInvoice = invoice.copyWith(id: invoiceId);
+      final savedItems = invoiceItems
+          .map((item) => item.copyWith(invoiceId: invoiceId))
+          .toList();
 
       for (final item in itemsToProcess) {
         item.product.quantity -= item.stockReduction;
@@ -2574,7 +2723,11 @@ class _CashierScreenState extends State<CashierScreen> {
       if (mounted) {
         setState(() => cartItems.clear());
         if (selection.paymentMethod == 'credit') await _loadCustomers();
-        await _showSuccessDialog(invoiceNumber);
+        await _showSuccessDialog(
+          invoice: savedInvoice,
+          items: savedItems,
+          customerName: selection.customer?.name,
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -2598,7 +2751,11 @@ class _CashierScreenState extends State<CashierScreen> {
     return '$datePart-$timePart';
   }
 
-  Future<void> _showSuccessDialog(String invoiceNumber) async {
+  Future<void> _showSuccessDialog({
+    required Invoice invoice,
+    required List<InvoiceItem> items,
+    String? customerName,
+  }) async {
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
@@ -2606,8 +2763,8 @@ class _CashierScreenState extends State<CashierScreen> {
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return DraggableDialog(
           title: 'تمت العملية بنجاح',
-          width: 400,
-          height: 220,
+          width: 440,
+          height: 250,
           child: AlertDialog(
             title: const Text(
               'تمت العملية بنجاح',
@@ -2615,12 +2772,46 @@ class _CashierScreenState extends State<CashierScreen> {
             ),
             content: Directionality(
               textDirection: TextDirection.rtl,
-              child: Text('رقم الفاتورة: $invoiceNumber'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'رقم الفاتورة: ${invoice.invoiceNumber}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (invoice.cashierName != null)
+                    Text('الكاشير / البائع: ${invoice.cashierName}'),
+                  const SizedBox(height: 4),
+                  Text('إجمالي المبلغ: ${invoice.total.toStringAsFixed(2)}'),
+                ],
+              ),
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('حسناً'),
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إغلاق'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppStyles.primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.print, size: 18),
+                label: const Text('طباعة الفاتورة'),
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  ThermalReceiptDialog.show(
+                    context,
+                    invoice: invoice,
+                    items: items,
+                    customerName: customerName,
+                  );
+                },
               ),
             ],
           ),

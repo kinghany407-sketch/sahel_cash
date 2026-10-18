@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/user_model.dart';
 import '../screens/cashier/cashier_screen.dart';
 import '../screens/customers/customers_screen.dart';
 import '../screens/expenses/expenses_screen.dart';
@@ -8,6 +10,8 @@ import '../screens/invoices/invoices_screen.dart';
 import '../screens/products/products_screen.dart';
 import '../screens/profits/profits_screen.dart';
 import '../screens/purchases/purchase_invoices_list_screen.dart';
+import '../screens/reports/reports_screen.dart';
+import '../screens/settings/settings_screen.dart';
 import '../screens/suppliers/suppliers_screen.dart';
 
 enum DesktopPage {
@@ -37,17 +41,94 @@ class DesktopLayout extends StatefulWidget {
 class _DesktopLayoutState extends State<DesktopLayout> {
   DesktopPage _currentPage = DesktopPage.home;
   bool _isSidebarExpanded = true;
+  UserRole _currentUserRole = UserRole.admin;
+  String _currentUserName = 'مدير النظام';
 
   @override
   void initState() {
     super.initState();
     _currentPage = widget.initialPage;
+    _loadUserSession();
+  }
+
+  Future<void> _loadUserSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final roleStr = prefs.getString('user_role');
+    final nameStr = prefs.getString('user_fullName');
+
+    if (mounted) {
+      setState(() {
+        _currentUserRole =
+            roleStr == 'cashier' ? UserRole.cashier : UserRole.admin;
+        _currentUserName = nameStr ??
+            (_currentUserRole == UserRole.admin ? 'مدير النظام' : 'كاشير');
+
+        if (_currentUserRole == UserRole.cashier && _isRestrictedPage(_currentPage)) {
+          _currentPage = DesktopPage.cashier;
+        }
+      });
+    }
+  }
+
+  bool _isRestrictedPage(DesktopPage page) {
+    return page == DesktopPage.reports ||
+        page == DesktopPage.profits ||
+        page == DesktopPage.settings;
   }
 
   void _navigateTo(DesktopPage page) {
+    if (_currentUserRole == UserRole.cashier && _isRestrictedPage(page)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('عذراً، هذه الشاشة مخصصة لمدير النظام فقط'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _currentPage = page;
     });
+  }
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تسجيل الخروج'),
+          content: const Text('هل تريد تسجيل الخروج من النظام والعودة لشاشة الدخول؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('تسجيل الخروج'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_id');
+      await prefs.remove('user_role');
+      await prefs.remove('user_fullName');
+
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      }
+    }
   }
 
   void _toggleSidebar() {
@@ -155,34 +236,109 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                   title: 'فواتير الشراء',
                   page: DesktopPage.purchaseInvoices,
                 ),
-                _buildNavItem(
-                  icon: Icons.attach_money,
-                  title: 'الأرباح',
-                  page: DesktopPage.profits,
-                ),
+                if (_currentUserRole == UserRole.admin)
+                  _buildNavItem(
+                    icon: Icons.attach_money,
+                    title: 'الأرباح',
+                    page: DesktopPage.profits,
+                  ),
                 _buildNavItem(
                   icon: Icons.payments,
                   title: 'المصروفات',
                   page: DesktopPage.expenses,
                 ),
-                _buildNavItem(
-                  icon: Icons.bar_chart,
-                  title: 'التقارير',
-                  page: DesktopPage.reports,
-                ),
+                if (_currentUserRole == UserRole.admin)
+                  _buildNavItem(
+                    icon: Icons.bar_chart,
+                    title: 'التقارير',
+                    page: DesktopPage.reports,
+                  ),
                 _buildNavItem(
                   icon: Icons.receipt_long,
                   title: 'الفواتير',
                   page: DesktopPage.invoices,
                 ),
-                _buildNavItem(
-                  icon: Icons.settings,
-                  title: 'الإعدادات',
-                  page: DesktopPage.settings,
-                ),
+                if (_currentUserRole == UserRole.admin)
+                  _buildNavItem(
+                    icon: Icons.settings,
+                    title: 'الإعدادات',
+                    page: DesktopPage.settings,
+                  ),
               ],
             ),
           ),
+          const Divider(height: 1),
+          // User Profile & Logout section
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: _currentUserRole == UserRole.admin
+                        ? Colors.indigo
+                        : Colors.teal,
+                    child: Icon(
+                      _currentUserRole == UserRole.admin
+                          ? Icons.admin_panel_settings
+                          : Icons.person,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (_isSidebarExpanded) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _currentUserName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            _currentUserRole == UserRole.admin
+                                ? 'مدير النظام'
+                                : 'كاشير',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: _currentUserRole == UserRole.admin
+                                  ? Colors.indigo
+                                  : Colors.teal,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.logout, size: 20, color: Colors.red),
+                      tooltip: 'تسجيل الخروج',
+                      onPressed: _logout,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (!_isSidebarExpanded)
+            IconButton(
+              icon: const Icon(Icons.logout, size: 20, color: Colors.red),
+              tooltip: 'تسجيل الخروج',
+              onPressed: _logout,
+            ),
           // Collapse/Expand button
           Padding(
             padding: const EdgeInsets.all(8),
@@ -283,6 +439,32 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   }
 
   Widget _buildCurrentPage() {
+    if (_currentUserRole == UserRole.cashier && _isRestrictedPage(_currentPage)) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.lock_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            const Text(
+              'عذراً، لا تملك الصلاحية للوصول إلى هذه الشاشة',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'هذه الشاشة مخصصة لمدير النظام فقط',
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _navigateTo(DesktopPage.cashier),
+              child: const Text('العودة إلى الكاشير'),
+            ),
+          ],
+        ),
+      );
+    }
+
     switch (_currentPage) {
       case DesktopPage.home:
         return const HomeScreen();
@@ -303,43 +485,11 @@ class _DesktopLayoutState extends State<DesktopLayout> {
       case DesktopPage.expenses:
         return const ExpensesScreen();
       case DesktopPage.reports:
-        return const _PlaceholderScreen(title: 'التقارير');
+        return const ReportsScreen();
       case DesktopPage.invoices:
         return const InvoicesScreen();
       case DesktopPage.settings:
-        return const _PlaceholderScreen(title: 'الإعدادات');
+        return const SettingsScreen();
     }
-  }
-}
-
-class _PlaceholderScreen extends StatelessWidget {
-  final String title;
-
-  const _PlaceholderScreen({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.construction, size: 80, color: Colors.grey.shade400),
-          const SizedBox(height: 20),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'قيد التطوير',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
   }
 }

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/repositories/invoice_repository.dart';
 import '../../models/invoice_item_model.dart';
 import '../../models/invoice_model.dart';
+import '../../models/user_model.dart';
 import '../../utils/quantity_formatter.dart';
 import '../../widgets/draggable_dialog.dart';
+import 'thermal_receipt_dialog.dart';
 
 class InvoicesScreen extends StatefulWidget {
   const InvoicesScreen({super.key});
@@ -28,6 +31,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _isLoading = true;
   bool _isGridView = false;
   InvoiceFilter _filter = InvoiceFilter.all;
+  UserRole _currentUserRole = UserRole.admin;
 
   DateTime? _fromDate;
   DateTime? _toDate;
@@ -35,16 +39,40 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   @override
   void initState() {
     super.initState();
-    _loadInvoices();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    await _loadUserRole();
+    await _loadInvoices();
+  }
+
+  Future<void> _loadUserRole() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final roleStr = prefs.getString('user_role');
+      if (roleStr == 'cashier') {
+        _currentUserRole = UserRole.cashier;
+        _filter = InvoiceFilter.today;
+      } else {
+        _currentUserRole = UserRole.admin;
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _loadInvoices() async {
     setState(() => _isLoading = true);
     try {
-      final invoices = await _invoiceRepository.getAllInvoices(
-        limit: 10000,
-        offset: 0,
-      );
+      List<Invoice> invoices;
+      if (_currentUserRole == UserRole.cashier) {
+        invoices = await _invoiceRepository.getTodayInvoices();
+      } else {
+        invoices = await _invoiceRepository.getAllInvoices(
+          limit: 10000,
+          offset: 0,
+        );
+      }
       if (!mounted) return;
       setState(() {
         _invoices = invoices;
@@ -103,7 +131,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   bool _matchesFilter(Invoice invoice) {
     final now = DateTime.now();
     final invoiceDate = DateTime.tryParse(invoice.date);
-    if (invoiceDate == null) return true;
+    if (invoiceDate == null) return _currentUserRole == UserRole.admin;
+
+    if (_currentUserRole == UserRole.cashier) {
+      return _sameDay(invoiceDate, now);
+    }
 
     switch (_filter) {
       case InvoiceFilter.today:
@@ -210,16 +242,17 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   Future<void> _showDetailsDialog(Invoice invoice) async {
     final items = await _invoiceRepository.getInvoiceItems(invoice.id!);
+    if (!mounted) return;
     await showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (_, __, ___) {
+      pageBuilder: (dialogContext, _, _) {
         return DraggableDialog(
           controller: _dialogController,
           title: 'تفاصيل الفاتورة ${invoice.invoiceNumber}',
           width: 700,
-          height: 500,
+          height: 520,
           child: Directionality(
             textDirection: TextDirection.rtl,
             child: AlertDialog(
@@ -233,9 +266,16 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     children: [
                       Text('رقم الفاتورة: ${invoice.invoiceNumber}'),
                       const SizedBox(height: 8),
+                      Text(
+                        'الكاشير / البائع: ${invoice.cashierName?.isNotEmpty == true ? invoice.cashierName! : (invoice.createdByName?.isNotEmpty == true ? invoice.createdByName! : 'غير محدد')}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
                       Text('التاريخ والوقت: ${_formatDateTime(invoice.date)}'),
                       const SizedBox(height: 8),
-                      Text('طريقة الدفع: ${invoice.paymentMethod}'),
+                      Text(
+                        'طريقة الدفع: ${invoice.paymentMethod == 'cash' ? 'نقدي' : invoice.paymentMethod == 'credit' ? 'آجل' : invoice.paymentMethod}',
+                      ),
                       const SizedBox(height: 16),
                       const Text(
                         'العناصر:',
@@ -282,6 +322,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                   item.productName,
                                   maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                                 Text(formatQuantity(item.quantity)),
                                 Text(item.saleUnit),
@@ -289,12 +332,39 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                 Text(item.total.toStringAsFixed(2)),
                               ],
                             );
-                          }).toList(),
+                          }),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'الإجمالي الكلي: ${invoice.total.toStringAsFixed(2)}',
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'الإجمالي الكلي:',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              invoice.total.toStringAsFixed(2),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                                color: Colors.blue.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -302,10 +372,21 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(dialogContext),
                   child: const Text('إغلاق'),
                 ),
-                TextButton(onPressed: () {}, child: const Text('طباعة')),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.print, size: 18),
+                  label: const Text('طباعة الفاتورة'),
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    ThermalReceiptDialog.show(
+                      context,
+                      invoice: invoice,
+                      items: items,
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -388,34 +469,67 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     ),
                     const Spacer(),
                     IconButton(
+                      tooltip: 'تحديث',
                       onPressed: _loadInvoices,
                       icon: const Icon(Icons.refresh),
                     ),
                     const SizedBox(width: 8),
-                    SegmentedButton<InvoiceFilter>(
-                      segments: const [
-                        ButtonSegment(
-                          value: InvoiceFilter.all,
-                          label: Text('الكل'),
+                    if (_currentUserRole == UserRole.admin)
+                      SegmentedButton<InvoiceFilter>(
+                        segments: const [
+                          ButtonSegment(
+                            value: InvoiceFilter.all,
+                            label: Text('الكل'),
+                          ),
+                          ButtonSegment(
+                            value: InvoiceFilter.today,
+                            label: Text('اليوم'),
+                          ),
+                          ButtonSegment(
+                            value: InvoiceFilter.week,
+                            label: Text('الأسبوع'),
+                          ),
+                          ButtonSegment(
+                            value: InvoiceFilter.month,
+                            label: Text('الشهر'),
+                          ),
+                        ],
+                        selected: {_filter},
+                        onSelectionChanged: (value) {
+                          setState(() => _filter = value.first);
+                        },
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
                         ),
-                        ButtonSegment(
-                          value: InvoiceFilter.today,
-                          label: Text('اليوم'),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.blue.shade200),
                         ),
-                        ButtonSegment(
-                          value: InvoiceFilter.week,
-                          label: Text('الأسبوع'),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.today,
+                              size: 16,
+                              color: Colors.blue.shade800,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'فواتير اليوم',
+                              style: TextStyle(
+                                color: Colors.blue.shade900,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
-                        ButtonSegment(
-                          value: InvoiceFilter.month,
-                          label: Text('الشهر'),
-                        ),
-                      ],
-                      selected: {_filter},
-                      onSelectionChanged: (value) {
-                        setState(() => _filter = value.first);
-                      },
-                    ),
+                      ),
                     const SizedBox(width: 8),
                     IconButton(
                       onPressed: () {
@@ -430,49 +544,70 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _statCard(
-                        'إجمالي الفواتير',
-                        '$_totalInvoices',
-                        Icons.receipt_long,
+                if (_currentUserRole == UserRole.admin)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _statCard(
+                          'إجمالي الفواتير',
+                          _totalInvoices.toString(),
+                          Icons.receipt_long,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _statCard(
-                        'مبيعات اليوم',
-                        '${_todaySales.toStringAsFixed(2)}',
-                        Icons.today,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _statCard(
+                          'مبيعات اليوم',
+                          _todaySales.toStringAsFixed(2),
+                          Icons.today,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _statCard(
-                        'مبيعات الأسبوع',
-                        '${_weekSales.toStringAsFixed(2)}',
-                        Icons.date_range,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _statCard(
+                          'مبيعات الأسبوع',
+                          _weekSales.toStringAsFixed(2),
+                          Icons.date_range,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _statCard(
-                        'مبيعات الشهر',
-                        '${_monthSales.toStringAsFixed(2)}',
-                        Icons.calendar_month,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _statCard(
+                          'مبيعات الشهر',
+                          _monthSales.toStringAsFixed(2),
+                          Icons.calendar_month,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _statCard(
-                        'عدد فواتير اليوم',
-                        '$_todayInvoiceCount',
-                        Icons.numbers,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _statCard(
+                          'عدد فواتير اليوم',
+                          _todayInvoiceCount.toString(),
+                          Icons.numbers,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _statCard(
+                          'عدد فواتير اليوم',
+                          _todayInvoiceCount.toString(),
+                          Icons.numbers,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _statCard(
+                          'إجمالي مبيعات اليوم',
+                          _todaySales.toStringAsFixed(2),
+                          Icons.today,
+                        ),
+                      ),
+                    ],
+                  ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -487,32 +622,34 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _fromDateController,
-                        readOnly: true,
-                        decoration: const InputDecoration(
-                          labelText: 'التاريخ من',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.date_range),
+                    if (_currentUserRole == UserRole.admin) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _fromDateController,
+                          readOnly: true,
+                          decoration: const InputDecoration(
+                            labelText: 'التاريخ من',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.date_range),
+                          ),
+                          onTap: _pickFromDate,
                         ),
-                        onTap: _pickFromDate,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _toDateController,
-                        readOnly: true,
-                        decoration: const InputDecoration(
-                          labelText: 'التاريخ إلى',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.date_range),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _toDateController,
+                          readOnly: true,
+                          decoration: const InputDecoration(
+                            labelText: 'التاريخ إلى',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.date_range),
+                          ),
+                          onTap: _pickToDate,
                         ),
-                        onTap: _pickToDate,
                       ),
-                    ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -569,6 +706,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
           child: DataTable(
             columns: const [
               DataColumn(label: Text('رقم الفاتورة')),
+              DataColumn(label: Text('الكاشير / البائع')),
               DataColumn(label: Text('التاريخ')),
               DataColumn(label: Text('الوقت')),
               DataColumn(label: Text('عدد العناصر')),
@@ -582,6 +720,16 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               return DataRow(
                 cells: [
                   DataCell(Text(invoice.invoiceNumber)),
+                  DataCell(
+                    Text(
+                      invoice.cashierName?.isNotEmpty == true
+                          ? invoice.cashierName!
+                          : (invoice.createdByName?.isNotEmpty == true
+                              ? invoice.createdByName!
+                              : '-'),
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
                   DataCell(
                     Text(
                       _formatDate(
@@ -605,18 +753,44 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       },
                     ),
                   ),
-                  DataCell(Text(invoice.total.toStringAsFixed(2))),
+                  DataCell(
+                    Text(
+                      invoice.total.toStringAsFixed(2),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                   DataCell(
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.remove_red_eye),
+                          icon: const Icon(
+                            Icons.remove_red_eye,
+                            color: Colors.blue,
+                          ),
+                          tooltip: 'عرض التفاصيل',
                           onPressed: () => _showDetailsDialog(invoice),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => _confirmDelete(invoice),
+                          icon: const Icon(Icons.print, color: Colors.indigo),
+                          tooltip: 'طباعة الإيصال الحراري',
+                          onPressed: () async {
+                            final items = await _invoiceRepository
+                                .getInvoiceItems(invoice.id!);
+                            if (!mounted) return;
+                            ThermalReceiptDialog.show(
+                              context,
+                              invoice: invoice,
+                              items: items,
+                            );
+                          },
                         ),
+                        if (_currentUserRole == UserRole.admin)
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            tooltip: 'حذف الفاتورة',
+                            onPressed: () => _confirmDelete(invoice),
+                          ),
                       ],
                     ),
                   ),
@@ -636,27 +810,69 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         crossAxisCount: 3,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 1.8,
+        childAspectRatio: 1.7,
       ),
       itemCount: invoices.length,
-      itemBuilder: (context, index) {
+      itemBuilder: (_, index) {
         final invoice = invoices[index];
+        final sellerName = invoice.cashierName?.isNotEmpty == true
+            ? invoice.cashierName!
+            : (invoice.createdByName?.isNotEmpty == true
+                ? invoice.createdByName!
+                : null);
+
         return Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'الفاتورة ${invoice.invoiceNumber}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'الفاتورة ${invoice.invoiceNumber}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (sellerName != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.person,
+                              size: 12,
+                              color: Colors.blue.shade800,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              sellerName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue.shade900,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(_formatDateTime(invoice.date)),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 FutureBuilder<List<InvoiceItem>>(
                   future: _invoiceRepository.getInvoiceItems(invoice.id!),
                   builder: (context, snapshot) {
@@ -664,7 +880,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     return Text('عدد العناصر: $count');
                   },
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   'الإجمالي: ${invoice.total.toStringAsFixed(2)}',
                   style: const TextStyle(
@@ -673,13 +889,36 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   ),
                 ),
                 const Spacer(),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showDetailsDialog(invoice),
-                    icon: const Icon(Icons.remove_red_eye),
-                    label: const Text('عرض التفاصيل'),
-                  ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.print, color: Colors.indigo),
+                      tooltip: 'طباعة الإيصال الحراري',
+                      onPressed: () async {
+                        final items = await _invoiceRepository.getInvoiceItems(
+                          invoice.id!,
+                        );
+                        if (!mounted) return;
+                        ThermalReceiptDialog.show(
+                          context,
+                          invoice: invoice,
+                          items: items,
+                        );
+                      },
+                    ),
+                    if (_currentUserRole == UserRole.admin)
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        tooltip: 'حذف الفاتورة',
+                        onPressed: () => _confirmDelete(invoice),
+                      ),
+                    const Spacer(),
+                    ElevatedButton.icon(
+                      onPressed: () => _showDetailsDialog(invoice),
+                      icon: const Icon(Icons.remove_red_eye, size: 16),
+                      label: const Text('عرض التفاصيل'),
+                    ),
+                  ],
                 ),
               ],
             ),
