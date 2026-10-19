@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/services.dart';
 
@@ -12,14 +13,15 @@ import '../../models/invoice_item_model.dart';
 import '../../models/invoice_model.dart';
 import '../../models/product_model.dart';
 import '../../models/product_sale_unit_model.dart';
+import '../../models/user_model.dart';
 import '../../repositories/product_repository.dart';
 import '../../repositories/customer_repository.dart';
+import '../../repositories/user_repository.dart';
 import '../../utils/quantity_formatter.dart';
 import '../../widgets/cashier_product_search_card.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../invoices/thermal_receipt_dialog.dart';
 import '../products/app_styles.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class CartItem {
   final Product product;
@@ -75,13 +77,6 @@ class CartItem {
   }
 }
 
-class _CheckoutSelection {
-  final String paymentMethod;
-  final Customer? customer;
-
-  const _CheckoutSelection({required this.paymentMethod, this.customer});
-}
-
 class CashierScreen extends StatefulWidget {
   const CashierScreen({super.key});
 
@@ -114,12 +109,38 @@ class _CashierScreenState extends State<CashierScreen> {
   bool _isImageSearchMode = false;
   double _cartSidebarWidth = 300.0;
   bool _showSearchOverlay = false;
+  User? _currentUser;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     _loadCustomers();
+    _loadCurrentUser();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('user_id');
+    if (userId != null) {
+      final userRepository = UserRepository();
+      final users = await userRepository.getAllUsers();
+      if (mounted) {
+        setState(() {
+          _currentUser = users.firstWhere(
+            (user) => user.id == userId,
+            orElse: () => User(
+              username: '',
+              password: '',
+              fullName: '',
+              role: UserRole.cashier,
+              createdAt: DateTime.now().toIso8601String(),
+              updatedAt: DateTime.now().toIso8601String(),
+            ),
+          );
+        });
+      }
+    }
   }
 
   Future<void> _loadCustomers() async {
@@ -2045,68 +2066,6 @@ class _CashierScreenState extends State<CashierScreen> {
     );
   }
 
-  Widget _buildSearchResults() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              'نتائج البحث (${searchResults.length})',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: GridView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(8),
-              itemCount: searchResults.length + (_isLoadingMore ? 1 : 0),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 200,
-                childAspectRatio: 0.75,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-              ),
-              itemBuilder: (context, index) {
-                if (index == searchResults.length) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-
-                final product = searchResults[index];
-                return CashierProductSearchCard(
-                  product: product,
-                  onTap: () => _handleProductCardTap(product),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSearchResultsOverlay() {
     return Container(
       constraints: const BoxConstraints(maxHeight: 300),
@@ -2534,132 +2493,29 @@ class _CashierScreenState extends State<CashierScreen> {
       return;
     }
 
-    final total = _calculateTotal();
-    final selection = await _showCheckoutDialog(total);
-    if (selection == null) return;
-    await _confirmCheckout(total, selection);
-  }
+    // Calculate subtotal
+    final subtotal = _calculateTotal();
 
-  Future<_CheckoutSelection?> _showCheckoutDialog(double total) async {
-    var paymentMethod = 'cash';
-    Customer? selectedCustomer;
-    String? errorMessage;
+    // Check discount permission
+    final canDiscount = _currentUser?.canDiscount ?? false;
 
-    return showGeneralDialog<_CheckoutSelection>(
+    await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
-          Directionality(
-            textDirection: TextDirection.rtl,
-            child: DraggableDialog(
-              controller: _dialogController,
-              title: 'اعتماد الفاتورة',
-              width: 520,
-              height: 480,
-              child: StatefulBuilder(
-                builder: (context, setDialogState) => Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'الإجمالي: ${total.toStringAsFixed(2)} ج.م',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text('طريقة الدفع'),
-                      RadioGroup<String>(
-                        groupValue: paymentMethod,
-                        onChanged: (value) => setDialogState(() {
-                          paymentMethod = value ?? 'cash';
-                          errorMessage = null;
-                        }),
-                        child: const Row(
-                          children: [
-                            Expanded(
-                              child: RadioListTile<String>(
-                                value: 'cash',
-                                title: Text('نقدي'),
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                            ),
-                            Expanded(
-                              child: RadioListTile<String>(
-                                value: 'credit',
-                                title: Text('آجل'),
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      DropdownButtonFormField<Customer>(
-                        initialValue: selectedCustomer,
-                        decoration: const InputDecoration(
-                          labelText: 'العميل (إلزامي للآجل)',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem<Customer>(
-                            value: null,
-                            child: Text('بدون عميل'),
-                          ),
-                          ..._customers.map(
-                            (customer) => DropdownMenuItem<Customer>(
-                              value: customer,
-                              child: Text(customer.name),
-                            ),
-                          ),
-                        ],
-                        onChanged: (customer) => setDialogState(() {
-                          selectedCustomer = customer;
-                          errorMessage = null;
-                        }),
-                      ),
-                      if (errorMessage != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          errorMessage!,
-                          style: const TextStyle(color: AppStyles.errorColor),
-                        ),
-                      ],
-                      const Spacer(),
-                      FilledButton.icon(
-                        onPressed: () {
-                          if (paymentMethod == 'credit' &&
-                              selectedCustomer?.id == null) {
-                            setDialogState(() {
-                              errorMessage = 'اختر العميل لإتمام البيع الآجل';
-                            });
-                            return;
-                          }
-                          Navigator.of(dialogContext).pop(
-                            _CheckoutSelection(
-                              paymentMethod: paymentMethod,
-                              customer: selectedCustomer,
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.check),
-                        label: const Text('اعتماد الفاتورة'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+      barrierDismissible: false,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return _PaymentDialog(
+          subtotal: subtotal,
+          canDiscount: canDiscount,
+          customers: _customers,
+          onConfirm: (invoice) async {
+            await _processInvoice(invoice);
+          },
+        );
+      },
     );
   }
 
-  Future<void> _confirmCheckout(
-    double total,
-    _CheckoutSelection selection,
-  ) async {
+  Future<void> _processInvoice(Invoice invoice) async {
     final invoiceNumber = _generateInvoiceNumber();
     final now = DateTime.now().toIso8601String();
 
@@ -2668,13 +2524,9 @@ class _CashierScreenState extends State<CashierScreen> {
     final userName =
         prefs.getString('user_fullName') ?? prefs.getString('user_username');
 
-    final invoice = Invoice(
+    final finalInvoice = invoice.copyWith(
       invoiceNumber: invoiceNumber,
       date: now,
-      total: total,
-      paymentMethod: selection.paymentMethod,
-      customerId: selection.customer?.id,
-      notes: null,
       cashierId: userId,
       cashierName: userName,
     );
@@ -2694,6 +2546,7 @@ class _CashierScreenState extends State<CashierScreen> {
           ),
         )
         .toList();
+
     final stockReductions = <int, double>{};
     for (final item in itemsToProcess) {
       final productId = item.product.id;
@@ -2707,35 +2560,37 @@ class _CashierScreenState extends State<CashierScreen> {
 
     try {
       final invoiceId = await _invoiceRepository.createInvoiceWithItems(
-        invoice: invoice,
+        invoice: finalInvoice,
         items: invoiceItems,
         stockReductions: stockReductions,
       );
 
-      final savedInvoice = invoice.copyWith(id: invoiceId);
+      final savedInvoice = finalInvoice.copyWith(id: invoiceId);
       final savedItems = invoiceItems
           .map((item) => item.copyWith(invoiceId: invoiceId))
           .toList();
 
-      for (final item in itemsToProcess) {
-        item.product.quantity -= item.stockReduction;
-      }
+      // Clear cart
       if (mounted) {
-        setState(() => cartItems.clear());
-        if (selection.paymentMethod == 'credit') await _loadCustomers();
+        setState(() {
+          cartItems.clear();
+        });
+        if (finalInvoice.paymentMethod == 'credit') await _loadCustomers();
+      }
+
+      // Show success dialog
+      if (mounted) {
         await _showSuccessDialog(
           invoice: savedInvoice,
           items: savedItems,
-          customerName: selection.customer?.name,
         );
       }
-    } catch (error) {
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('تعذر اعتماد الفاتورة: $error'),
+            content: Text('خطأ في إنشاء الفاتورة: $e'),
             backgroundColor: AppStyles.errorColor,
-            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -2754,7 +2609,6 @@ class _CashierScreenState extends State<CashierScreen> {
   Future<void> _showSuccessDialog({
     required Invoice invoice,
     required List<InvoiceItem> items,
-    String? customerName,
   }) async {
     await showGeneralDialog(
       context: context,
@@ -2788,6 +2642,12 @@ class _CashierScreenState extends State<CashierScreen> {
                     Text('الكاشير / البائع: ${invoice.cashierName}'),
                   const SizedBox(height: 4),
                   Text('إجمالي المبلغ: ${invoice.total.toStringAsFixed(2)}'),
+                  if (invoice.paymentMethod == 'cash') ...[
+                    const SizedBox(height: 4),
+                    Text('المدفوع: ${invoice.paidAmount.toStringAsFixed(2)}'),
+                    const SizedBox(height: 4),
+                    Text('الباقي: ${invoice.changeAmount.toStringAsFixed(2)}'),
+                  ],
                 ],
               ),
             ),
@@ -2809,7 +2669,6 @@ class _CashierScreenState extends State<CashierScreen> {
                     context,
                     invoice: invoice,
                     items: items,
-                    customerName: customerName,
                   );
                 },
               ),
@@ -2822,5 +2681,297 @@ class _CashierScreenState extends State<CashierScreen> {
 
   double _calculateTotal() {
     return cartItems.fold(0.0, (sum, item) => sum + item.total);
+  }
+}
+
+class _PaymentDialog extends StatefulWidget {
+  final double subtotal;
+  final bool canDiscount;
+  final List<Customer> customers;
+  final Function(Invoice) onConfirm;
+
+  const _PaymentDialog({
+    required this.subtotal,
+    required this.canDiscount,
+    required this.customers,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_PaymentDialog> createState() => _PaymentDialogState();
+}
+
+class _PaymentDialogState extends State<_PaymentDialog> {
+  final _discountController = TextEditingController();
+  final _paidAmountController = TextEditingController();
+  String _discountType = 'amount';
+  String _paymentMethod = 'cash';
+  Customer? _selectedCustomer;
+  double _discount = 0.0;
+  double _paidAmount = 0.0;
+  double _change = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _paidAmountController.text = widget.subtotal.toStringAsFixed(2);
+    _paidAmount = widget.subtotal;
+    _calculateTotal();
+  }
+
+  @override
+  void dispose() {
+    _discountController.dispose();
+    _paidAmountController.dispose();
+    super.dispose();
+  }
+
+  double get _total {
+    double discountAmount = 0.0;
+    if (_discountType == 'percentage') {
+      discountAmount = widget.subtotal * (_discount / 100);
+    } else {
+      discountAmount = _discount;
+    }
+    return widget.subtotal - discountAmount;
+  }
+
+  void _calculateTotal() {
+    setState(() {
+      if (_paymentMethod == 'cash') {
+        _change = _paidAmount - _total;
+      }
+    });
+  }
+
+  void _onConfirm() {
+    final invoice = Invoice(
+      invoiceNumber: DateTime.now().millisecondsSinceEpoch.toString(),
+      date: DateTime.now().toIso8601String(),
+      total: _total,
+      paymentMethod: _paymentMethod,
+      customerId: _selectedCustomer?.id,
+      discount: _discount,
+      discountType: _discountType,
+      paidAmount: _paidAmount,
+      changeAmount: _change,
+    );
+    widget.onConfirm(invoice);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableDialog(
+      title: 'الدفع',
+      width: 500,
+      height: 450,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'المجموع الفرعي:',
+                  style: TextStyle(fontSize: 16),
+                ),
+                Text(
+                  '${widget.subtotal.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (widget.canDiscount) ...[
+              const Divider(),
+              const SizedBox(height: 16),
+              const Text(
+                'الخصم',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _discountController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'قيمة الخصم',
+                        prefixIcon: Icon(Icons.discount),
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _discount = double.tryParse(value) ?? 0.0;
+                          _calculateTotal();
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  DropdownButton<String>(
+                    value: _discountType,
+                    items: const [
+                      DropdownMenuItem(value: 'amount', child: Text('قيمة')),
+                      DropdownMenuItem(value: 'percentage', child: Text('نسبة %')),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _discountType = value!;
+                        _calculateTotal();
+                      });
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            const Divider(),
+            const SizedBox(height: 16),
+
+            const Text(
+              'طريقة الدفع',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Radio<String>(
+                  value: 'cash',
+                  groupValue: _paymentMethod,
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _paymentMethod = value;
+                        _calculateTotal();
+                      });
+                    }
+                  },
+                ),
+                const Text('نقدي'),
+                const SizedBox(width: 24),
+                Radio<String>(
+                  value: 'credit',
+                  groupValue: _paymentMethod,
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _paymentMethod = value;
+                        _calculateTotal();
+                      });
+                    }
+                  },
+                ),
+                const Text('آجل'),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (_paymentMethod == 'cash') ...[
+              TextField(
+                controller: _paidAmountController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'المدفوع',
+                  prefixIcon: Icon(Icons.payments),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _paidAmount = double.tryParse(value) ?? 0.0;
+                    _calculateTotal();
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'الباقي:',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  Text(
+                    '${_change.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: _change < 0 ? Colors.red : Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (_paymentMethod == 'credit') ...[
+              DropdownButtonFormField<Customer>(
+                value: _selectedCustomer,
+                decoration: const InputDecoration(
+                  labelText: 'العميل',
+                  prefixIcon: Icon(Icons.person),
+                ),
+                items: widget.customers.map((customer) {
+                  return DropdownMenuItem<Customer>(
+                    value: customer,
+                    child: Text(customer.name),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedCustomer = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            const Spacer(),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'الإجمالي:',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '${_total.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppStyles.primaryColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _onConfirm,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppStyles.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text(
+                  'اعتماد الفاتورة',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

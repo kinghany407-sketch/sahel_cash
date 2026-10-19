@@ -51,9 +51,21 @@ class UserRepository {
 
   Future<int> updateUser(User user) async {
     final db = await _databaseHelper.database;
+    final now = DateTime.now().toIso8601String();
     return await db.update(
       'users',
-      user.toMap(),
+      {
+        'username': user.username,
+        'password': user.password,
+        'fullName': user.fullName,
+        'role': user.role.name,
+        'isActive': user.isActive ? 1 : 0,
+        'canAccessReports': user.canAccessReports ? 1 : 0,
+        'canAccessProfits': user.canAccessProfits ? 1 : 0,
+        'canAccessSettings': user.canAccessSettings ? 1 : 0,
+        'canDiscount': user.canDiscount ? 1 : 0,
+        'updatedAt': now,
+      },
       where: 'id = ?',
       whereArgs: [user.id],
     );

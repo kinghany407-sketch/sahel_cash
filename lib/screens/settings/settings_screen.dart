@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import '../products/app_styles.dart';
 import '../../database/database_helper.dart';
+import '../users/users_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -222,6 +223,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: AppStyles.spacingMd),
                 _buildBackupRestoreCard(),
                 const SizedBox(height: AppStyles.spacingMd),
+                _buildUserManagementCard(),
+                const SizedBox(height: AppStyles.spacingMd),
                 _buildLanguageSettingsCard(),
                 const SizedBox(height: AppStyles.spacingLg),
                 _buildSaveButton(),
@@ -437,7 +440,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: ElevatedButton.icon(
                         onPressed: _createBackup,
                         icon: const Icon(Icons.cloud_upload, size: 18),
-                        label: const Text('إنشاء نسخة احتياطية'),
+                        label: const Text('نسخ احتياطي الآن'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppStyles.primaryColor,
                           foregroundColor: Colors.white,
@@ -486,6 +489,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildUserManagementCard() {
+    return Card(
+      color: Colors.white,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const UsersScreen()),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppStyles.primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.people, color: AppStyles.primaryColor, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'إدارة المستخدمين',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'إضافة وتعديل المستخدمين والصلاحيات',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.arrow_back_ios, color: Colors.grey),
+            ],
+          ),
+        ),
       ),
     );
   }

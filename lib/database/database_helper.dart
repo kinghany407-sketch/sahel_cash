@@ -61,7 +61,7 @@ class DatabaseHelper {
 
     final db = await openDatabase(
       newPath,
-      version: 19,
+      version: 20,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -460,6 +460,13 @@ CREATE TABLE IF NOT EXISTS expenses(
     if (oldVersion < 19) {
       await _ensureUsersTable(db);
     }
+
+    if (oldVersion < 20) {
+      await _safeAddColumn(db, 'users', 'canAccessReports', 'INTEGER NOT NULL DEFAULT 0');
+      await _safeAddColumn(db, 'users', 'canAccessProfits', 'INTEGER NOT NULL DEFAULT 0');
+      await _safeAddColumn(db, 'users', 'canAccessSettings', 'INTEGER NOT NULL DEFAULT 0');
+      await _safeAddColumn(db, 'users', 'canDiscount', 'INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   Future<void> _ensureUsersTable(Database db) async {
@@ -471,6 +478,10 @@ CREATE TABLE IF NOT EXISTS users(
   fullName TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'cashier',
   isActive INTEGER NOT NULL DEFAULT 1,
+  canAccessReports INTEGER NOT NULL DEFAULT 0,
+  canAccessProfits INTEGER NOT NULL DEFAULT 0,
+  canAccessSettings INTEGER NOT NULL DEFAULT 0,
+  canDiscount INTEGER NOT NULL DEFAULT 0,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
 )
@@ -489,6 +500,10 @@ CREATE TABLE IF NOT EXISTS users(
         'fullName': 'مدير النظام',
         'role': 'admin',
         'isActive': 1,
+        'canAccessReports': 1,
+        'canAccessProfits': 1,
+        'canAccessSettings': 1,
+        'canDiscount': 1,
         'createdAt': now,
         'updatedAt': now,
       });
@@ -507,6 +522,10 @@ CREATE TABLE IF NOT EXISTS users(
         'fullName': 'كاشير 1',
         'role': 'cashier',
         'isActive': 1,
+        'canAccessReports': 0,
+        'canAccessProfits': 0,
+        'canAccessSettings': 0,
+        'canDiscount': 0,
         'createdAt': now,
         'updatedAt': now,
       });

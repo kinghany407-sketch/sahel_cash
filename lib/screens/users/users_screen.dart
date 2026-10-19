@@ -165,6 +165,13 @@ class _UsersScreenState extends State<UsersScreen> {
   Widget _buildHeader() {
     return Row(
       children: [
+        // Back button
+        IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () => Navigator.pop(context),
+          tooltip: 'رجوع',
+        ),
+        const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
@@ -359,6 +366,10 @@ class _AddUserDialogState extends State<AddUserDialog> {
   UserRole _selectedRole = UserRole.cashier;
   bool _isActive = true;
   bool _obscurePassword = true;
+  bool _canAccessReports = false;
+  bool _canAccessProfits = false;
+  bool _canAccessSettings = false;
+  bool _canDiscount = false;
 
   @override
   void initState() {
@@ -369,6 +380,10 @@ class _AddUserDialogState extends State<AddUserDialog> {
       _fullNameController.text = widget.user!.fullName;
       _selectedRole = widget.user!.role;
       _isActive = widget.user!.isActive;
+      _canAccessReports = widget.user!.canAccessReports;
+      _canAccessProfits = widget.user!.canAccessProfits;
+      _canAccessSettings = widget.user!.canAccessSettings;
+      _canDiscount = widget.user!.canDiscount;
     }
   }
 
@@ -390,6 +405,10 @@ class _AddUserDialogState extends State<AddUserDialog> {
         fullName: _fullNameController.text,
         role: _selectedRole,
         isActive: _isActive,
+        canAccessReports: _canAccessReports,
+        canAccessProfits: _canAccessProfits,
+        canAccessSettings: _canAccessSettings,
+        canDiscount: _canDiscount,
         createdAt: widget.user?.createdAt ?? now,
         updatedAt: now,
       );
@@ -402,7 +421,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
     return DraggableDialog(
       title: widget.user == null ? 'إضافة مستخدم جديد' : 'تعديل المستخدم',
       width: 500,
-      height: 400,
+      height: 550,
       child: Form(
         key: _formKey,
         child: Padding(
@@ -474,14 +493,76 @@ class _AddUserDialogState extends State<AddUserDialog> {
                   ),
                   items: const [
                     DropdownMenuItem(value: UserRole.admin, child: Text('مدير النظام')),
+                    DropdownMenuItem(value: UserRole.supervisor, child: Text('مشرف')),
                     DropdownMenuItem(value: UserRole.cashier, child: Text('كاشير')),
                   ],
                   onChanged: (value) {
                     if (value != null) {
                       setState(() {
                         _selectedRole = value;
+                        // Auto-set permissions based on role
+                        if (value == UserRole.admin) {
+                          _canAccessReports = true;
+                          _canAccessProfits = true;
+                          _canAccessSettings = true;
+                          _canDiscount = true;
+                        } else if (value == UserRole.supervisor) {
+                          _canAccessReports = true;
+                          _canAccessProfits = true;
+                          _canAccessSettings = false;
+                          _canDiscount = true;
+                        } else {
+                          _canAccessReports = false;
+                          _canAccessProfits = false;
+                          _canAccessSettings = false;
+                          _canDiscount = false;
+                        }
                       });
                     }
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                const Text(
+                  'الصلاحيات',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  title: const Text('الوصول للتقارير'),
+                  value: _canAccessReports,
+                  onChanged: (value) {
+                    setState(() {
+                      _canAccessReports = value ?? false;
+                    });
+                  },
+                ),
+                CheckboxListTile(
+                  title: const Text('الوصول للأرباح'),
+                  value: _canAccessProfits,
+                  onChanged: (value) {
+                    setState(() {
+                      _canAccessProfits = value ?? false;
+                    });
+                  },
+                ),
+                CheckboxListTile(
+                  title: const Text('الوصول للإعدادات'),
+                  value: _canAccessSettings,
+                  onChanged: (value) {
+                    setState(() {
+                      _canAccessSettings = value ?? false;
+                    });
+                  },
+                ),
+                CheckboxListTile(
+                  title: const Text('إتاحة الخصم'),
+                  value: _canDiscount,
+                  onChanged: (value) {
+                    setState(() {
+                      _canDiscount = value ?? false;
+                    });
                   },
                 ),
                 const SizedBox(height: 16),

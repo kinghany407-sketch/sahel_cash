@@ -41,6 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
           await prefs.setInt('user_id', user.id!);
           await prefs.setString('user_role', user.role.name);
           await prefs.setString('user_fullName', user.fullName);
+          await prefs.setString('user_username', user.username);
 
           if (mounted) {
             Navigator.pushReplacementNamed(context, '/home');
@@ -186,34 +187,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              'الحسابات الافتراضية للنظام:',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              '• المدير: admin  /  كلمة السر: admin123',
-                              style: TextStyle(fontSize: 11, color: Colors.black54),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              '• الكاشير: cashier  /  كلمة السر: 123',
-                              style: TextStyle(fontSize: 11, color: Colors.black54),
-                            ),
-                          ],
                         ),
                       ),
                     ],
