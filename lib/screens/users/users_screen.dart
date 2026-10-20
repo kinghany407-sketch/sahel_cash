@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/user_model.dart';
 import '../../repositories/user_repository.dart';
 import '../../widgets/draggable_dialog.dart';
@@ -102,23 +103,79 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Future<void> _deleteUser(User user) async {
-    final confirm = await showDialog<bool>(
+    // Prevent deleting the currently logged-in user
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = prefs.getInt('user_id');
+
+    if (user.id == currentUserId) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('لا يمكن حذف المستخدم الحالي'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Prevent deleting the admin user
+    if (user.username == 'admin') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('لا يمكن حذف حساب المدير'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final confirm = await showGeneralDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('تأكيد الحذف'),
-        content: Text('هل أنت متأكد من حذف المستخدم "${user.fullName}"؟'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
+      barrierDismissible: false,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return DraggableDialog(
+          title: 'تأكيد الحذف',
+          width: 400,
+          height: 200,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'هل أنت متأكد من حذف المستخدم "${user.fullName}"؟',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('إلغاء'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('حذف'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
+        );
+      },
     );
 
     if (confirm == true) {
