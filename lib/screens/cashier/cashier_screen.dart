@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -107,9 +108,9 @@ class _CashierScreenState extends State<CashierScreen> {
   final int _batchSize = 20;
   String? _currentSearchQuery;
   bool _isImageSearchMode = false;
-  double _cartSidebarWidth = 300.0;
   bool _showSearchOverlay = false;
   User? _currentUser;
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -215,7 +216,8 @@ class _CashierScreenState extends State<CashierScreen> {
         _currentOffset += results.length;
         _isLoading = false;
         _isLoadingMore = results.length >= _batchSize;
-        _showSearchOverlay = results.isNotEmpty && _currentOffset == 0;
+        // Show overlay if we have results and user is still searching
+        _showSearchOverlay = results.isNotEmpty && searchText.isNotEmpty;
       });
     } catch (e) {
       if (mounted) {
@@ -1861,6 +1863,7 @@ class _CashierScreenState extends State<CashierScreen> {
     _searchFocusNode.dispose();
     _scrollController.dispose();
     _dialogController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -1870,61 +1873,38 @@ class _CashierScreenState extends State<CashierScreen> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         body: SafeArea(
-          child: Row(
-            textDirection: TextDirection.rtl,
+          child: Stack(
             children: [
-              // Main content area
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Stack(
-                    children: [
-                      Column(
-                        children: [
-                          // Header with search
-                          _buildSearchSection(),
-                          const SizedBox(height: 12),
+              // Full-screen cart (100% width)
+              _buildCartSidebar(),
 
-                          // Empty state or space for cart
-                          Expanded(
-                            child: _isLoading
-                                ? const Center(child: CircularProgressIndicator())
-                                : _buildEmptyState(),
-                          ),
-                        ],
-                      ),
-
-                      // Search results overlay
-                      if (_showSearchOverlay && searchResults.isNotEmpty)
-                        Positioned(
-                          top: 60,
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _showSearchOverlay = false;
-                              });
-                            },
-                            child: Container(
-                              color: Colors.black.withValues(alpha: 0.1),
-                              child: Column(
-                                children: [
-                                  const SizedBox(height: 12),
-                                  _buildSearchResultsOverlay(),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+              // Search bar overlay at top
+              Positioned(
+                top: 8,
+                left: 8,
+                right: 8,
+                child: _buildSearchSection(),
               ),
 
-              // Fixed cart sidebar
-              _buildCartSidebar(),
+              // Search results overlay
+              if (_showSearchOverlay && searchResults.isNotEmpty)
+                Positioned(
+                  top: 90,
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _showSearchOverlay = false;
+                      });
+                    },
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      child: _buildSearchResultsOverlay(),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1933,133 +1913,133 @@ class _CashierScreenState extends State<CashierScreen> {
   }
 
   Widget _buildSearchSection() {
-    return Row(
-      textDirection: TextDirection.rtl,
-      children: [
-        const Text(
-          '🛒 الكاشير',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: AppStyles.primaryColor,
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: TextField(
-            controller: searchController,
-            focusNode: _searchFocusNode,
-            decoration: InputDecoration(
-              hintText: 'ابحث بالاسم، SKU، أو الباركود...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: searchText.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: _clearSearch,
-                    )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
+        ],
+      ),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        children: [
+          const Text(
+            '🛒 الكاشير',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppStyles.primaryColor,
             ),
-            onChanged: (value) {
-              setState(() {
-                searchText = value;
-              });
-              _performSearch(value);
-              if (value.isNotEmpty && searchResults.isNotEmpty) {
-                _showSearchOverlay = true;
-              } else {
-                _showSearchOverlay = false;
-              }
-            },
-            onTap: () {
-              if (searchText.isNotEmpty && searchResults.isNotEmpty) {
-                setState(() {
-                  _showSearchOverlay = true;
-                });
-              }
-            },
-            onSubmitted: (value) {
-              if (searchResults.isNotEmpty) {
-                _addToCart(searchResults.first);
-                setState(() {
-                  _showSearchOverlay = false;
-                });
-              }
-            },
           ),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton.icon(
-          onPressed: () async {
-            if (searchResults.isNotEmpty) {
-              await _openProductSelectionDialog(searchResults.first);
-              return;
-            }
-
-            if (searchText.trim().isNotEmpty) {
-              await _performSearch(searchText.trim());
+          const SizedBox(width: 16),
+          Expanded(
+            child: TextField(
+              controller: searchController,
+              focusNode: _searchFocusNode,
+              decoration: InputDecoration(
+                hintText: 'ابحث بالاسم، SKU، أو الباركود...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: searchText.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearSearch,
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  searchText = value;
+                  // Show overlay immediately if there are existing results
+                  if (value.isNotEmpty && searchResults.isNotEmpty) {
+                    _showSearchOverlay = true;
+                  }
+                });
+                _searchDebounce?.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+                  _performSearch(value);
+                });
+              },
+              onTap: () {
+                if (searchText.isNotEmpty && searchResults.isNotEmpty) {
+                  setState(() {
+                    _showSearchOverlay = true;
+                  });
+                }
+              },
+              onSubmitted: (value) {
+                if (searchResults.isNotEmpty) {
+                  _addToCart(searchResults.first);
+                  setState(() {
+                    _showSearchOverlay = false;
+                  });
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: () async {
               if (searchResults.isNotEmpty) {
                 await _openProductSelectionDialog(searchResults.first);
                 return;
               }
-            }
 
-            await _openProductSearchDialog();
-          },
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('+ إضافة صنف'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppStyles.primaryColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          ),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton.icon(
-          onPressed: _isSearchingByImage ? null : _searchByImage,
-          icon: _isSearchingByImage
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Icon(Icons.camera_alt, size: 18),
-          label: const Text('بحث بالصورة'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppStyles.primaryColor,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          ),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          icon: const Icon(Icons.refresh, size: 20),
-          onPressed: _isLoading ? null : _clearSearch,
-          tooltip: 'تحديث',
-        ),
-      ],
-    );
-  }
+              if (searchText.trim().isNotEmpty) {
+                await _performSearch(searchText.trim());
+                if (searchResults.isNotEmpty) {
+                  await _openProductSelectionDialog(searchResults.first);
+                  return;
+                }
+              }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.search, size: 64, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          const Text(
-            'ابدأ البحث عن منتج',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
+              await _openProductSearchDialog();
+            },
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('+ إضافة صنف'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppStyles.primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: _isSearchingByImage ? null : _searchByImage,
+            icon: _isSearchingByImage
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.camera_alt, size: 18),
+            label: const Text('بحث بالصورة'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppStyles.primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 20),
+            onPressed: _isLoading ? null : _clearSearch,
+            tooltip: 'تحديث',
           ),
         ],
       ),
@@ -2143,216 +2123,184 @@ class _CashierScreenState extends State<CashierScreen> {
   }
 
   Widget _buildCartSidebar() {
-    return Row(
-      textDirection: TextDirection.rtl,
-      children: [
-        // Draggable handle
-        MouseRegion(
-          cursor: SystemMouseCursors.resizeLeftRight,
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              setState(() {
-                _cartSidebarWidth += details.delta.dx;
-                _cartSidebarWidth = _cartSidebarWidth.clamp(250.0, 500.0);
-              });
-            },
-            child: Container(
-              width: 8,
-              height: double.infinity,
-              color: Colors.grey.shade300,
-              child: Center(
-                child: Container(
-                  width: 2,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade500,
-                    borderRadius: BorderRadius.circular(1),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 4,
+            offset: const Offset(-2, 0),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Top padding to account for search bar overlay
+          const SizedBox(height: 80),
+          // Cart header
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppStyles.primaryColor),
+            child: Row(
+              textDirection: TextDirection.rtl,
+              children: [
+                const Icon(Icons.shopping_cart, color: Colors.white),
+                const SizedBox(width: 8),
+                const Text(
+                  'السلة',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
                   ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${cartItems.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Cart items
+          Expanded(
+            child: cartItems.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.shopping_cart_outlined,
+                          size: 64,
+                          color: Colors.grey.shade300,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'السلة فارغة',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: cartItems.length,
+                    itemBuilder: (context, index) {
+                      final item = cartItems[index];
+                      return _buildCartItem(item);
+                    },
+                  ),
+          ),
+          // Quick sell button
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              border: Border(top: BorderSide(color: Colors.grey.shade300)),
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _openQuickSellDialog,
+                icon: const Icon(Icons.flash_on, size: 18),
+                label: const Text('بيع سريع'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ),
           ),
-        ),
-        // Cart sidebar
-        Container(
-          width: _cartSidebarWidth,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 4,
-                offset: const Offset(-2, 0),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              // Cart header
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: AppStyles.primaryColor),
-                child: Row(
-                  textDirection: TextDirection.rtl,
-                  children: [
-                    const Icon(Icons.shopping_cart, color: Colors.white),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'السلة',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${cartItems.length}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
+          // Cart footer
+          if (cartItems.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade300),
                 ),
               ),
-              // Cart items
-              Expanded(
-                child: cartItems.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.shopping_cart_outlined,
-                              size: 64,
-                              color: Colors.grey.shade300,
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'السلة فارغة',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: cartItems.length,
-                        itemBuilder: (context, index) {
-                          final item = cartItems[index];
-                          return _buildCartItem(item);
-                        },
-                      ),
-              ),
-              // Quick sell button
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  border: Border(top: BorderSide(color: Colors.grey.shade300)),
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _openQuickSellDialog,
-                    icon: const Icon(Icons.flash_on, size: 18),
-                    label: const Text('بيع سريع'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ),
-              // Cart footer
-              if (cartItems.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    border: Border(
-                      top: BorderSide(color: Colors.grey.shade300),
-                    ),
-                  ),
-                  child: Column(
+              child: Column(
+                children: [
+                  Row(
+                    textDirection: TextDirection.rtl,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        textDirection: TextDirection.rtl,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'المجموع:',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          Text(
-                            _calculateTotal().toStringAsFixed(2),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              color: AppStyles.primaryColor,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _handleCheckoutButton,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                          ),
-                          child: const Text(
-                            'إتمام البيع',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                      const Text(
+                        'المجموع:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: () {
-                            setState(() {
-                              cartItems.clear();
-                            });
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppStyles.errorColor,
-                          ),
-                          child: const Text('إفراغ السلة'),
+                      Text(
+                        _calculateTotal().toStringAsFixed(2),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          color: AppStyles.primaryColor,
                         ),
                       ),
                     ],
                   ),
-                ),
-            ],
-          ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _handleCheckoutButton,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        'إتمام البيع',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        setState(() {
+                          cartItems.clear();
+                        });
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppStyles.errorColor,
+                      ),
+                      child: const Text('إفراغ السلة'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
-    );
+      );
   }
 
   Widget _buildCartItem(CartItem item) {
@@ -2496,8 +2444,9 @@ class _CashierScreenState extends State<CashierScreen> {
     // Calculate subtotal
     final subtotal = _calculateTotal();
 
-    // Check discount permission
-    final canDiscount = _currentUser?.canDiscount ?? false;
+    // Check discount permission - admin users have all permissions
+    final canDiscount = _currentUser?.hasPermission('discount') ?? false;
+    print('DEBUG: canDiscount = $canDiscount, _currentUser = $_currentUser, role = ${_currentUser?.role}');
 
     await showGeneralDialog(
       context: context,
@@ -2618,18 +2567,21 @@ class _CashierScreenState extends State<CashierScreen> {
         return DraggableDialog(
           title: 'تمت العملية بنجاح',
           width: 440,
-          height: 250,
-          child: AlertDialog(
-            title: const Text(
-              'تمت العملية بنجاح',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            content: Directionality(
-              textDirection: TextDirection.rtl,
+          height: 300,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: SingleChildScrollView(
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text(
+                    'تمت العملية بنجاح',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     'رقم الفاتورة: ${invoice.invoiceNumber}',
                     style: const TextStyle(
@@ -2648,31 +2600,36 @@ class _CashierScreenState extends State<CashierScreen> {
                     const SizedBox(height: 4),
                     Text('الباقي: ${invoice.changeAmount.toStringAsFixed(2)}'),
                   ],
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('إغلاق'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppStyles.primaryColor,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.print, size: 18),
+                        label: const Text('طباعة الفاتورة'),
+                        onPressed: () {
+                          Navigator.pop(dialogContext);
+                          ThermalReceiptDialog.show(
+                            context,
+                            invoice: invoice,
+                            items: items,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('إغلاق'),
-              ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppStyles.primaryColor,
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.print, size: 18),
-                label: const Text('طباعة الفاتورة'),
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  ThermalReceiptDialog.show(
-                    context,
-                    invoice: invoice,
-                    items: items,
-                  );
-                },
-              ),
-            ],
           ),
         );
       },
@@ -2765,211 +2722,211 @@ class _PaymentDialogState extends State<_PaymentDialog> {
     return DraggableDialog(
       title: 'الدفع',
       width: 500,
-      height: 450,
+      height: 480,
       child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'المجموع الفرعي:',
-                  style: TextStyle(fontSize: 16),
-                ),
-                Text(
-                  '${widget.subtotal.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'المجموع الفرعي:',
+                    style: TextStyle(fontSize: 16),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                  Text(
+                    '${widget.subtotal.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
 
-            if (widget.canDiscount) ...[
+              if (widget.canDiscount) ...[
+                const Divider(),
+                const SizedBox(height: 12),
+                const Text(
+                  'الخصم',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _discountController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'قيمة الخصم',
+                          prefixIcon: Icon(Icons.discount),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _discount = double.tryParse(value) ?? 0.0;
+                            _calculateTotal();
+                          });
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    DropdownButton<String>(
+                      value: _discountType,
+                      items: const [
+                        DropdownMenuItem(value: 'amount', child: Text('قيمة')),
+                        DropdownMenuItem(value: 'percentage', child: Text('نسبة %')),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _discountType = value!;
+                          _calculateTotal();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+
               const Divider(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+
               const Text(
-                'الخصم',
+                'طريقة الدفع',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _discountController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'قيمة الخصم',
-                        prefixIcon: Icon(Icons.discount),
-                      ),
-                      onChanged: (value) {
+                  Radio<String>(
+                    value: 'cash',
+                    groupValue: _paymentMethod,
+                    onChanged: (value) {
+                      if (value != null) {
                         setState(() {
-                          _discount = double.tryParse(value) ?? 0.0;
+                          _paymentMethod = value;
                           _calculateTotal();
                         });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  DropdownButton<String>(
-                    value: _discountType,
-                    items: const [
-                      DropdownMenuItem(value: 'amount', child: Text('قيمة')),
-                      DropdownMenuItem(value: 'percentage', child: Text('نسبة %')),
-                    ],
-                    onChanged: (value) {
-                      setState(() {
-                        _discountType = value!;
-                        _calculateTotal();
-                      });
+                      }
                     },
                   ),
+                  const Text('نقدي'),
+                  const SizedBox(width: 24),
+                  Radio<String>(
+                    value: 'credit',
+                    groupValue: _paymentMethod,
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _paymentMethod = value;
+                          _calculateTotal();
+                        });
+                      }
+                    },
+                  ),
+                  const Text('آجل'),
                 ],
               ),
-              const SizedBox(height: 16),
-            ],
+              const SizedBox(height: 12),
 
-            const Divider(),
-            const SizedBox(height: 16),
-
-            const Text(
-              'طريقة الدفع',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Radio<String>(
-                  value: 'cash',
-                  groupValue: _paymentMethod,
+              if (_paymentMethod == 'cash') ...[
+                TextField(
+                  controller: _paidAmountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'المدفوع',
+                    prefixIcon: Icon(Icons.payments),
+                  ),
                   onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _paymentMethod = value;
-                        _calculateTotal();
-                      });
-                    }
+                    setState(() {
+                      _paidAmount = double.tryParse(value) ?? 0.0;
+                      _calculateTotal();
+                    });
                   },
                 ),
-                const Text('نقدي'),
-                const SizedBox(width: 24),
-                Radio<String>(
-                  value: 'credit',
-                  groupValue: _paymentMethod,
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _paymentMethod = value;
-                        _calculateTotal();
-                      });
-                    }
-                  },
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'الباقي:',
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    Text(
+                      '${_change.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _change < 0 ? Colors.red : Colors.green,
+                      ),
+                    ),
+                  ],
                 ),
-                const Text('آجل'),
+                const SizedBox(height: 12),
               ],
-            ),
-            const SizedBox(height: 16),
 
-            if (_paymentMethod == 'cash') ...[
-              TextField(
-                controller: _paidAmountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'المدفوع',
-                  prefixIcon: Icon(Icons.payments),
+              if (_paymentMethod == 'credit') ...[
+                DropdownButtonFormField<Customer>(
+                  value: _selectedCustomer,
+                  decoration: const InputDecoration(
+                    labelText: 'العميل',
+                    prefixIcon: Icon(Icons.person),
+                  ),
+                  items: widget.customers.map((customer) {
+                    return DropdownMenuItem<Customer>(
+                      value: customer,
+                      child: Text(customer.name),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedCustomer = value;
+                    });
+                  },
                 ),
-                onChanged: (value) {
-                  setState(() {
-                    _paidAmount = double.tryParse(value) ?? 0.0;
-                    _calculateTotal();
-                  });
-                },
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 12),
+              ],
+
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'الباقي:',
-                    style: TextStyle(fontSize: 16),
+                    'الإجمالي:',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   Text(
-                    '${_change.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 18,
+                    '${_total.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: _change < 0 ? Colors.red : Colors.green,
+                      color: AppStyles.primaryColor,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-            ],
 
-            if (_paymentMethod == 'credit') ...[
-              DropdownButtonFormField<Customer>(
-                value: _selectedCustomer,
-                decoration: const InputDecoration(
-                  labelText: 'العميل',
-                  prefixIcon: Icon(Icons.person),
-                ),
-                items: widget.customers.map((customer) {
-                  return DropdownMenuItem<Customer>(
-                    value: customer,
-                    child: Text(customer.name),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedCustomer = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            const Spacer(),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'الإجمالي:',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  '${_total.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppStyles.primaryColor,
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _onConfirm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppStyles.primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text(
+                    'اعتماد الفاتورة',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _onConfirm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppStyles.primaryColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text(
-                  'اعتماد الفاتورة',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
