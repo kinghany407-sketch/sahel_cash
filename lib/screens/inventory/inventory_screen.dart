@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/product_model.dart';
+import '../../models/user_model.dart';
 import '../../repositories/product_repository.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../products/app_styles.dart';
@@ -31,11 +33,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
   InventoryFilter _filter = InventoryFilter.all;
   bool _isLoading = true;
   bool _isGridView = true;
+  UserRole _currentUserRole = UserRole.admin;
 
   @override
   void initState() {
     super.initState();
+    _loadUserRole();
     _loadProducts();
+  }
+
+  Future<void> _loadUserRole() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final roleStr = prefs.getString('user_role');
+      if (roleStr == 'cashier') {
+        _currentUserRole = UserRole.cashier;
+      } else {
+        _currentUserRole = UserRole.admin;
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _loadProducts() async {
@@ -568,12 +585,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 ),
               ),
               DataCell(Text(product.sellPrice.toStringAsFixed(2))),
-              DataCell(
-                IconButton(
-                  icon: const Icon(Icons.edit, size: 18),
-                  onPressed: () => _openStockDialog(product),
+              if (_currentUserRole != UserRole.cashier)
+                DataCell(
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 18),
+                    onPressed: () => _openStockDialog(product),
+                  ),
                 ),
-              ),
+              if (_currentUserRole == UserRole.cashier)
+                const DataCell(Text('')),
             ],
           );
         }).toList(),
@@ -586,7 +606,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final hasBarcode = product.barcode.trim().isNotEmpty;
 
     return GestureDetector(
-      onTap: () => _openStockDialog(product),
+      onTap: _currentUserRole != UserRole.cashier ? () => _openStockDialog(product) : null,
       child: Card(
         color: Colors.white,
         elevation: 3,

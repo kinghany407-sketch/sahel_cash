@@ -17,8 +17,8 @@ class ProductCard extends StatelessWidget {
   final String storageUnit;
   final String saleUnit;
   final bool isLowStock;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final bool showPurchasePrice;
   final bool showProfit;
 
@@ -36,8 +36,8 @@ class ProductCard extends StatelessWidget {
     required this.storageUnit,
     required this.saleUnit,
     required this.isLowStock,
-    required this.onEdit,
-    required this.onDelete,
+    this.onEdit,
+    this.onDelete,
     this.showPurchasePrice = true,
     this.showProfit = true,
   });
@@ -254,45 +254,47 @@ class ProductCard extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.end,
                       textDirection: TextDirection.rtl,
                       children: [
-                        SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: IconButton(
-                            onPressed: onEdit,
-                            icon: const Icon(
-                              Icons.edit,
-                              color: Colors.blue,
-                              size: 16,
-                            ),
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.blue.withValues(alpha: 0.1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
+                        if (onEdit != null)
+                          SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: IconButton(
+                              onPressed: onEdit,
+                              icon: const Icon(
+                                Icons.edit,
+                                color: Colors.blue,
+                                size: 16,
                               ),
-                              padding: EdgeInsets.zero,
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.blue.withValues(alpha: 0.1),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
                             ),
                           ),
-                        ),
                         const SizedBox(width: 5),
-                        SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: IconButton(
-                            onPressed: onDelete,
-                            icon: const Icon(
-                              Icons.delete,
-                              color: AppStyles.errorColor,
-                              size: 16,
-                            ),
-                            style: IconButton.styleFrom(
-                              backgroundColor: AppStyles.errorColor.withValues(alpha: 0.1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
+                        if (onDelete != null)
+                          SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: IconButton(
+                              onPressed: onDelete,
+                              icon: const Icon(
+                                Icons.delete,
+                                color: AppStyles.errorColor,
+                                size: 16,
                               ),
-                              padding: EdgeInsets.zero,
+                              style: IconButton.styleFrom(
+                                backgroundColor: AppStyles.errorColor.withValues(alpha: 0.1),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                     ],

@@ -73,7 +73,10 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   bool _isRestrictedPage(DesktopPage page) {
     return page == DesktopPage.reports ||
         page == DesktopPage.profits ||
-        page == DesktopPage.settings;
+        page == DesktopPage.settings ||
+        page == DesktopPage.suppliers ||
+        page == DesktopPage.purchaseInvoices ||
+        page == DesktopPage.expenses;
   }
 
   void _navigateTo(DesktopPage page) {
@@ -226,27 +229,30 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                   title: 'العملاء',
                   page: DesktopPage.customers,
                 ),
-                _buildNavItem(
-                  icon: Icons.local_shipping,
-                  title: 'الموردون',
-                  page: DesktopPage.suppliers,
-                ),
-                _buildNavItem(
-                  icon: Icons.shopping_bag,
-                  title: 'فواتير الشراء',
-                  page: DesktopPage.purchaseInvoices,
-                ),
+                if (_currentUserRole != UserRole.cashier)
+                  _buildNavItem(
+                    icon: Icons.local_shipping,
+                    title: 'الموردون',
+                    page: DesktopPage.suppliers,
+                  ),
+                if (_currentUserRole != UserRole.cashier)
+                  _buildNavItem(
+                    icon: Icons.shopping_bag,
+                    title: 'فواتير الشراء',
+                    page: DesktopPage.purchaseInvoices,
+                  ),
                 if (_currentUserRole == UserRole.admin)
                   _buildNavItem(
                     icon: Icons.attach_money,
                     title: 'الأرباح',
                     page: DesktopPage.profits,
                   ),
-                _buildNavItem(
-                  icon: Icons.payments,
-                  title: 'المصروفات',
-                  page: DesktopPage.expenses,
-                ),
+                if (_currentUserRole != UserRole.cashier)
+                  _buildNavItem(
+                    icon: Icons.payments,
+                    title: 'المصروفات',
+                    page: DesktopPage.expenses,
+                  ),
                 if (_currentUserRole == UserRole.admin)
                   _buildNavItem(
                     icon: Icons.bar_chart,

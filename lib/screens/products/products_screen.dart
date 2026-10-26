@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/product_model.dart';
 import '../../repositories/product_repository.dart';
@@ -32,7 +33,21 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   void initState() {
     super.initState();
+    _loadUserRole();
     _loadProducts();
+  }
+
+  Future<void> _loadUserRole() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final roleStr = prefs.getString('user_role');
+      if (roleStr == 'cashier') {
+        _currentRole = UserRole.cashier;
+      } else {
+        _currentRole = UserRole.admin;
+      }
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _loadProducts() async {
@@ -355,22 +370,23 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      SizedBox(
-                        height: 36,
-                        child: ElevatedButton.icon(
-                          onPressed: _showAddDialog,
-                          icon: const Icon(Icons.add, size: 14),
-                          label: const Text('إضافة صنف', style: TextStyle(fontSize: 11)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppStyles.primaryColor,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
+                      if (_currentRole != UserRole.cashier)
+                        SizedBox(
+                          height: 36,
+                          child: ElevatedButton.icon(
+                            onPressed: _showAddDialog,
+                            icon: const Icon(Icons.add, size: 14),
+                            label: const Text('إضافة صنف', style: TextStyle(fontSize: 11)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppStyles.primaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                       const SizedBox(width: 6),
                       SizedBox(
                         height: 36,
@@ -409,9 +425,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           onRefresh: _loadProducts,
                           child: ProductTable(
                             products: filteredProducts,
-                            onEdit: _showEditDialog,
-                            onDelete: _confirmDelete,
-                            onView: _showViewDialog,
+                            onEdit: _currentRole != UserRole.cashier ? (product) => _showEditDialog(product) : null,
+                            onDelete: _currentRole != UserRole.cashier ? (product) => _confirmDelete(product) : null,
+                            onView: (product) => _showViewDialog(product),
                             role: _currentRole,
                             initialIsGrid: _isGridView,
                             onViewModeChanged: (isGrid) {

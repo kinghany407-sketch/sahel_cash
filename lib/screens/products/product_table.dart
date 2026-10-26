@@ -9,8 +9,8 @@ import 'product_card.dart';
 
 class ProductTable extends StatefulWidget {
   final List<Product> products;
-  final void Function(Product product) onEdit;
-  final void Function(Product product) onDelete;
+  final void Function(Product product)? onEdit;
+  final void Function(Product product)? onDelete;
   final void Function(Product product) onView;
   final UserRole role;
   final bool initialIsGrid;
@@ -19,8 +19,8 @@ class ProductTable extends StatefulWidget {
   const ProductTable({
     super.key,
     required this.products,
-    required this.onEdit,
-    required this.onDelete,
+    this.onEdit,
+    this.onDelete,
     required this.onView,
     this.role = UserRole.admin,
     this.initialIsGrid = false,
@@ -317,21 +317,23 @@ class _ProductTableState extends State<ProductTable> {
                                     constraints: const BoxConstraints(),
                                   ),
                                   const SizedBox(width: 8),
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, size: 15),
-                                    onPressed: () => widget.onEdit(item),
-                                    tooltip: 'تعديل',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
+                                  if (widget.onEdit != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, size: 15),
+                                      onPressed: () => widget.onEdit!(item),
+                                      tooltip: 'تعديل',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
                                   const SizedBox(width: 8),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, size: 15, color: Colors.red),
-                                    onPressed: () => widget.onDelete(item),
-                                    tooltip: 'حذف',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
+                                  if (widget.onDelete != null)
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, size: 15, color: Colors.red),
+                                      onPressed: () => widget.onDelete!(item),
+                                      tooltip: 'حذف',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
                                 ],
                               ),
                             ),
@@ -485,8 +487,8 @@ class _ProductTableState extends State<ProductTable> {
           storageUnit: item.storageUnit,
           saleUnit: item.saleUnit,
           isLowStock: item.isLowStock,
-          onEdit: () => widget.onEdit(item),
-          onDelete: () => widget.onDelete(item),
+          onEdit: widget.onEdit != null ? () => widget.onEdit!(item) : null,
+          onDelete: widget.onDelete != null ? () => widget.onDelete!(item) : null,
           showPurchasePrice: ProductAccess.canAccessPurchasePrice(widget.role),
           showProfit: ProductAccess.canAccessProfit(widget.role),
         );
