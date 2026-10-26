@@ -99,6 +99,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
   Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
@@ -229,13 +230,13 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                   title: 'العملاء',
                   page: DesktopPage.customers,
                 ),
-                if (_currentUserRole != UserRole.cashier)
+                if (_currentUserRole == UserRole.admin)
                   _buildNavItem(
                     icon: Icons.local_shipping,
                     title: 'الموردون',
                     page: DesktopPage.suppliers,
                   ),
-                if (_currentUserRole != UserRole.cashier)
+                if (_currentUserRole == UserRole.admin)
                   _buildNavItem(
                     icon: Icons.shopping_bag,
                     title: 'فواتير الشراء',
@@ -247,7 +248,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                     title: 'الأرباح',
                     page: DesktopPage.profits,
                   ),
-                if (_currentUserRole != UserRole.cashier)
+                if (_currentUserRole == UserRole.admin)
                   _buildNavItem(
                     icon: Icons.payments,
                     title: 'المصروفات',

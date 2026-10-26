@@ -81,6 +81,7 @@ class _DescriptionsManagerDialogState extends State<DescriptionsManagerDialog> {
   Future<void> _confirmDelete(String description) async {
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('تأكيد الحذف'),
         content: Text('هل تريد حذف الوصف؟'),

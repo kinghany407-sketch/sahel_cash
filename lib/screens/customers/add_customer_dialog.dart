@@ -83,7 +83,7 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
       name: name,
       phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
       address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
-      initialBalance: initialBalance!,
+      initialBalance: initialBalance,
       currentBalance: widget.customer?.currentBalance ?? initialBalance,
       notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
       createdAt: widget.customer?.createdAt ?? now,

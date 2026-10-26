@@ -64,7 +64,7 @@ class _PurchaseInvoicesListScreenState
     if (details == null || !mounted) return;
     await showGeneralDialog<void>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, _, _) => PurchaseInvoiceDetailsDialog(invoice: details),
     );
@@ -73,7 +73,7 @@ class _PurchaseInvoicesListScreenState
   Future<void> _deleteInvoice(PurchaseInvoice invoice) async {
     final confirmed = await showGeneralDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) =>
           Directionality(

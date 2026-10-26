@@ -26,7 +26,7 @@ class ThermalReceiptDialog extends StatelessWidget {
   }) {
     return showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return ThermalReceiptDialog(

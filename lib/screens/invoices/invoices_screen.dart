@@ -245,7 +245,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     if (!mounted) return;
     await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, _, _) {
         return DraggableDialog(
@@ -446,6 +446,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   Future<void> _confirmDelete(Invoice invoice) async {
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text(
           'تأكيد الحذف',

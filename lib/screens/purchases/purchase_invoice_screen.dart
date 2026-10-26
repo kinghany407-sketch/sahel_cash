@@ -261,7 +261,7 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
   Future<void> _pickDate() async {
     final picked = await showGeneralDialog<DateTime>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) =>
           Directionality(
@@ -351,7 +351,7 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
   Future<void> _confirmClearDraft() async {
     final confirmed = await showGeneralDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) =>
           Directionality(

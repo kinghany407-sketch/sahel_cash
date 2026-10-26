@@ -70,7 +70,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
   Future<void> _showAddDialog({Supplier? supplier}) async {
     final savedSupplier = await showGeneralDialog<Supplier>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (context, animation, secondaryAnimation) =>
           AddSupplierDialog(supplier: supplier),
@@ -86,7 +86,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
   Future<void> _showStatement(Supplier supplier) async {
     await showGeneralDialog<void>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (context, animation, secondaryAnimation) =>
           SupplierStatementDialog(supplier: supplier),
@@ -96,7 +96,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
   Future<void> _deleteSupplier(Supplier supplier) async {
     final confirmed = await showGeneralDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) =>
           Directionality(

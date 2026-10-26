@@ -144,7 +144,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
     await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) {
         return DraggableDialog(
@@ -304,7 +304,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   ) async {
     await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) {
         return DraggableDialog(

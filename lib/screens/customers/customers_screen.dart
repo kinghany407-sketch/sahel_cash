@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/customer_model.dart';
+import '../../models/user_model.dart';
 import '../../repositories/customer_repository.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../products/app_styles.dart';
 import 'add_customer_dialog.dart';
 import 'customer_statement_dialog.dart';
+import 'receipt_voucher_dialog.dart';
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
@@ -24,11 +27,26 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
   String searchText = '';
   bool _isLoading = true;
+  UserRole _currentUserRole = UserRole.admin;
 
   @override
   void initState() {
     super.initState();
+    _loadUserRole();
     _loadCustomers();
+  }
+
+  Future<void> _loadUserRole() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final roleStr = prefs.getString('user_role');
+      if (mounted) {
+        setState(() {
+          _currentUserRole =
+              roleStr == 'cashier' ? UserRole.cashier : UserRole.admin;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadCustomers() async {
@@ -99,7 +117,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   Future<void> _showAddDialog() async {
     final Customer? customer = await showGeneralDialog<Customer>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (context, animation, secondaryAnimation) =>
           const AddCustomerDialog(),
@@ -122,7 +140,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   Future<void> _showEditDialog(Customer customer) async {
     final Customer? updatedCustomer = await showGeneralDialog<Customer>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (context, animation, secondaryAnimation) =>
           AddCustomerDialog(customer: customer),
@@ -145,7 +163,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   Future<void> _showStatementDialog(Customer customer) async {
     await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (context, animation, secondaryAnimation) =>
           CustomerStatementDialog(customer: customer),
@@ -153,9 +171,22 @@ class _CustomersScreenState extends State<CustomersScreen> {
     if (mounted) await _loadCustomers();
   }
 
+  Future<void> _showAddPaymentDialog(Customer customer) async {
+    final created = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      pageBuilder: (_, _, _) => ReceiptVoucherDialog(customer: customer),
+    );
+    if (created == true && mounted) {
+      await _loadCustomers();
+    }
+  }
+
   Future<void> _deleteCustomer(Customer customer) async {
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('تأكيد الحذف'),
         content: Text('هل تريد حذف العميل "${customer.name}"؟'),
@@ -280,11 +311,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
             ],
           ),
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _showAddDialog,
-          backgroundColor: AppStyles.primaryColor,
-          child: const Icon(Icons.add),
-        ),
+        floatingActionButton: _currentUserRole == UserRole.admin
+            ? FloatingActionButton(
+                onPressed: _showAddDialog,
+                backgroundColor: AppStyles.primaryColor,
+                child: const Icon(Icons.add),
+              )
+            : null,
       ),
     );
   }
@@ -400,17 +433,25 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   color: Colors.blue,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.edit, size: 20),
-                  onPressed: () => _showEditDialog(customer),
-                  tooltip: 'تعديل',
-                  color: Colors.orange,
+                  icon: const Icon(Icons.payment, size: 20),
+                  onPressed: () => _showAddPaymentDialog(customer),
+                  tooltip: 'سند دفع',
+                  color: Colors.green,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 20),
-                  onPressed: () => _deleteCustomer(customer),
-                  tooltip: 'حذف',
-                  color: AppStyles.errorColor,
-                ),
+                if (_currentUserRole == UserRole.admin) ...[
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 20),
+                    onPressed: () => _showEditDialog(customer),
+                    tooltip: 'تعديل',
+                    color: Colors.orange,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete, size: 20),
+                    onPressed: () => _deleteCustomer(customer),
+                    tooltip: 'حذف',
+                    color: AppStyles.errorColor,
+                  ),
+                ],
               ],
             ),
           ],

@@ -10,7 +10,6 @@ import '../../repositories/customer_repository.dart';
 import '../../repositories/receipt_voucher_repository.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../products/app_styles.dart';
-import 'receipt_voucher_dialog.dart';
 
 class CustomerStatementDialog extends StatefulWidget {
   final Customer customer;
@@ -69,16 +68,6 @@ class _CustomerStatementDialogState extends State<CustomerStatementDialog> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<void> _showReceiptDialog() async {
-    final created = await showGeneralDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      pageBuilder: (_, _, _) => ReceiptVoucherDialog(customer: _customer),
-    );
-    if (created == true && mounted) await _loadStatement();
   }
 
   @override
@@ -288,13 +277,6 @@ class _CustomerStatementDialogState extends State<CustomerStatementDialog> {
                                     color: Colors.black87,
                                   ),
                                 ),
-                              ),
-                              FilledButton.icon(
-                                onPressed: _customer.currentBalance > 0
-                                    ? _showReceiptDialog
-                                    : null,
-                                icon: const Icon(Icons.add),
-                                label: const Text('سند قبض'),
                               ),
                             ],
                           ),

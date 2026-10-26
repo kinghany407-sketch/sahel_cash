@@ -44,7 +44,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   Future<void> _showExpenseDialog({Expense? expense}) async {
     final created = await showGeneralDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, _, _) => AddExpenseDialog(expense: expense),
     );
@@ -60,7 +60,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     if (expense.id == null) return;
     final confirmed = await showGeneralDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) => Directionality(
         textDirection: TextDirection.rtl,

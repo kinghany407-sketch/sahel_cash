@@ -45,6 +45,7 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
                 onTap: () async {
                   await showDialog(
                     context: context,
+                    barrierDismissible: false,
                     builder: (dialogContext) => CategoriesManagerDialog(
                       categoriesManager: _categoriesManager,
                     ),
@@ -59,6 +60,7 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
                 onTap: () async {
                   await showDialog(
                     context: context,
+                    barrierDismissible: false,
                     builder: (dialogContext) =>
                         UnitsManagerDialog(unitsManager: _unitsManager),
                   );
@@ -72,6 +74,7 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
                 onTap: () async {
                   await showDialog(
                     context: context,
+                    barrierDismissible: false,
                     builder: (dialogContext) => ConversionManagerDialog(
                       conversionManager: _conversionManager,
                     ),
@@ -86,6 +89,7 @@ class _MasterDataScreenState extends State<MasterDataScreen> {
                 onTap: () async {
                   await showDialog(
                     context: context,
+                    barrierDismissible: false,
                     builder: (dialogContext) => DescriptionsManagerDialog(
                       descriptionsManager: _descriptionsManager,
                     ),

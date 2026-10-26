@@ -1506,7 +1506,7 @@ class _ProfitsScreenState extends State<ProfitsScreen>
   void _showInvoiceProfitDetails(InvoiceProfitData data) {
     showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return DraggableDialog(

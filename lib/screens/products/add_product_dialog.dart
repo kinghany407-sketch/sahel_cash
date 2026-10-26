@@ -259,6 +259,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(saleUnit == null ? 'إضافة وحدة بيع' : 'تعديل وحدة بيع'),
@@ -621,6 +622,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                       onManagePressed: () async {
                         await showDialog(
                           context: context,
+                          barrierDismissible: false,
                           builder: (dialogContext) => CategoriesManagerDialog(
                             categoriesManager: _categoriesManager,
                           ),
@@ -673,6 +675,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                       onManagePressed: () async {
                         await showDialog(
                           context: context,
+                          barrierDismissible: false,
                           builder: (dialogContext) =>
                               UnitsManagerDialog(unitsManager: _unitsManager),
                         );
@@ -773,6 +776,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                                 onManagePressed: () async {
                                   await showDialog(
                                     context: context,
+                                    barrierDismissible: false,
                                     builder: (dialogContext) =>
                                         UnitsManagerDialog(
                                           unitsManager: _unitsManager,
@@ -803,6 +807,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                                 onManagePressed: () async {
                                   await showDialog(
                                     context: context,
+                                    barrierDismissible: false,
                                     builder: (dialogContext) =>
                                         UnitsManagerDialog(
                                           unitsManager: _unitsManager,
@@ -848,6 +853,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                                 onManagePressed: () async {
                                   await showDialog(
                                     context: context,
+                                    barrierDismissible: false,
                                     builder: (dialogContext) =>
                                         DescriptionsManagerDialog(
                                           descriptionsManager:

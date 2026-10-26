@@ -28,6 +28,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   String searchText = '';
   bool _isLoading = true;
   UserRole _currentRole = UserRole.admin;
+  UserRole _loggedInRole = UserRole.admin;
   bool _isGridView = false;
 
   @override
@@ -42,8 +43,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
       final prefs = await SharedPreferences.getInstance();
       final roleStr = prefs.getString('user_role');
       if (roleStr == 'cashier') {
+        _loggedInRole = UserRole.cashier;
         _currentRole = UserRole.cashier;
+      } else if (roleStr == 'supervisor') {
+        _loggedInRole = UserRole.supervisor;
+        _currentRole = UserRole.supervisor;
       } else {
+        _loggedInRole = UserRole.admin;
         _currentRole = UserRole.admin;
       }
       if (mounted) setState(() {});
@@ -83,7 +89,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Future<void> _showAddDialog() async {
     final Product? product = await showGeneralDialog<Product>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) => AddProductDialog(role: _currentRole),
     );
@@ -108,7 +114,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     
     final Product? updatedProduct = await showGeneralDialog<Product>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) =>
           AddProductDialog(product: product, role: _currentRole),
@@ -136,7 +142,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Future<void> _showViewDialog(Product product) async {
     await showGeneralDialog<Product>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) => AddProductDialog(
         product: product,
@@ -149,7 +155,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Future<void> _confirmDelete(Product product) async {
     final bool? confirmed = await showGeneralDialog<bool>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) {
         return DraggableDialog(
@@ -282,44 +288,46 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       onPressed: _isLoading ? null : _loadProducts,
                       tooltip: 'تحديث',
                     ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppStyles.primaryColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<UserRole>(
-                          value: _currentRole,
-                          items: UserRole.values.map((role) {
-                            return DropdownMenuItem<UserRole>(
-                              value: role,
-                              child: Text(
-                                ProductAccess.roleLabel(role),
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
+                    if (_loggedInRole != UserRole.cashier) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppStyles.primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<UserRole>(
+                            value: _currentRole,
+                            items: UserRole.values.map((role) {
+                              return DropdownMenuItem<UserRole>(
+                                value: role,
+                                child: Text(
+                                  ProductAccess.roleLabel(role),
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _currentRole = value);
-                            }
-                          },
-                          icon: const Icon(
-                            Icons.arrow_drop_down,
-                            color: AppStyles.primaryColor,
-                            size: 18,
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _currentRole = value);
+                              }
+                            },
+                            icon: const Icon(
+                              Icons.arrow_drop_down,
+                              color: AppStyles.primaryColor,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                     const SizedBox(width: 6),
                     // Product count badge on the right
                     Container(
@@ -369,8 +377,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      if (_currentRole != UserRole.cashier)
+                      if (_currentRole != UserRole.cashier) ...[
+                        const SizedBox(width: 6),
                         SizedBox(
                           height: 36,
                           child: ElevatedButton.icon(
@@ -387,30 +395,31 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             ),
                           ),
                         ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        height: 36,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const MasterDataScreen(),
+                        const SizedBox(width: 6),
+                        SizedBox(
+                          height: 36,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const MasterDataScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.dataset, size: 14),
+                            label: const Text('البيانات الأساسية', style: TextStyle(fontSize: 11)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppStyles.primaryColor.withValues(alpha: 0.1),
+                              foregroundColor: AppStyles.primaryColor,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.dataset, size: 14),
-                          label: const Text('البيانات الأساسية', style: TextStyle(fontSize: 11)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppStyles.primaryColor.withValues(alpha: 0.1),
-                            foregroundColor: AppStyles.primaryColor,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),

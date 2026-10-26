@@ -76,6 +76,7 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
   Future<void> _confirmDelete(String unit) async {
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('تأكيد الحذف'),
         content: Text('هل تريد حذف الوحدة "$unit"؟'),

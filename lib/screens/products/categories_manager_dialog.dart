@@ -77,6 +77,7 @@ class _CategoriesManagerDialogState extends State<CategoriesManagerDialog> {
   Future<void> _confirmDelete(String category) async {
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('تأكيد الحذف'),
         content: Text('هل تريد حذف الفئة "$category"؟'),

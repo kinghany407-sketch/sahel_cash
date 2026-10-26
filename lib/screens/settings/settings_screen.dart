@@ -152,6 +152,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Confirm restore
           final confirm = await showDialog<bool>(
             context: context,
+            barrierDismissible: false,
             builder: (context) => AlertDialog(
               title: const Text('تأكيد الاستعادة'),
               content: const Text('سيتم استبدال قاعدة البيانات الحالية بالنسخة الاحتياطية. هل أنت متأكد؟'),

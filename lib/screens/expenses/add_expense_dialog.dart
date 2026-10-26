@@ -47,7 +47,7 @@ class _AddExpenseDialogState extends State<AddExpenseDialog> {
   Future<void> _pickDate() async {
     final selectedDate = await showGeneralDialog<DateTime>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) =>
           Directionality(

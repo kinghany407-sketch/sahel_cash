@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -31,6 +33,7 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
     final controller = TextEditingController(text: initialValue ?? '');
     final result = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: Text(title),
         content: TextField(
@@ -111,6 +114,7 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
     if (action == 'delete') {
       final confirmed = await showDialog<bool>(
         context: context,
+        barrierDismissible: false,
         builder: (dialogContext) => AlertDialog(
           title: const Text('تأكيد الحذف'),
           content: Text('هل تريد حذف الوحدة "$currentValue"؟'),
@@ -219,6 +223,7 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
   Future<void> _confirmDelete(ConversionTemplate template) async {
     final confirmed = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('تأكيد الحذف'),
         content: Text(
@@ -269,6 +274,7 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
             child: Text(
               unit,
               textDirection: TextDirection.rtl,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         );
@@ -285,10 +291,16 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
         DropdownMenuItem<String>(
           value: '__add_unit__',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.add_circle_outline, color: AppStyles.successColor),
+              Icon(Icons.add_circle_outline, color: AppStyles.successColor, size: 18),
               SizedBox(width: 8),
-              Text('➕ إضافة وحدة جديدة'),
+              Flexible(
+                child: Text(
+                  '➕ إضافة وحدة جديدة',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
@@ -297,10 +309,16 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
         DropdownMenuItem<String>(
           value: '__edit_unit__',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.edit_outlined, color: Colors.blue),
+              Icon(Icons.edit_outlined, color: Colors.blue, size: 18),
               SizedBox(width: 8),
-              Text('✏️ تعديل الوحدة المحددة'),
+              Flexible(
+                child: Text(
+                  '✏️ تعديل الوحدة المحددة',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
@@ -309,16 +327,23 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
         DropdownMenuItem<String>(
           value: '__delete_unit__',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.delete_outline, color: AppStyles.errorColor),
+              Icon(Icons.delete_outline, color: AppStyles.errorColor, size: 18),
               SizedBox(width: 8),
-              Text('🗑️ حذف الوحدة المحددة'),
+              Flexible(
+                child: Text(
+                  '🗑️ حذف الوحدة المحددة',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
       );
 
       return DropdownButtonFormField<String>(
+        isExpanded: true,
         initialValue: availableUnits.contains(selectedUnit) ? selectedUnit : null,
         decoration: AppStyles.inputDecoration(
           labelText: label,
@@ -370,36 +395,59 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
       );
     }
 
+    final screenSize = MediaQuery.sizeOf(context);
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: DraggableDialog(
         title: 'إدارة التحويلات',
-        width: AppStyles.dialogWidthLg,
-        height: 700,
+        width: math.min(AppStyles.dialogWidthLg, screenSize.width - 32),
+        height: math.min(700, math.max(360, screenSize.height - 40)),
         child: Padding(
           padding: const EdgeInsets.all(AppStyles.spacingLg),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: buildUnitDropdown(
-                        label: 'وحدة الشراء',
-                        selectedUnit: _fromUnit,
-                        isPurchaseDropdown: true,
-                      ),
-                    ),
-                    const SizedBox(width: AppStyles.spacingSm),
-                    Expanded(
-                      child: buildUnitDropdown(
-                        label: 'وحدة البيع',
-                        selectedUnit: _toUnit,
-                        isPurchaseDropdown: false,
-                      ),
-                    ),
-                  ],
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth < 450) {
+                      return Column(
+                        children: [
+                          buildUnitDropdown(
+                            label: 'وحدة الشراء',
+                            selectedUnit: _fromUnit,
+                            isPurchaseDropdown: true,
+                          ),
+                          const SizedBox(height: AppStyles.spacingSm),
+                          buildUnitDropdown(
+                            label: 'وحدة البيع',
+                            selectedUnit: _toUnit,
+                            isPurchaseDropdown: false,
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: buildUnitDropdown(
+                            label: 'وحدة الشراء',
+                            selectedUnit: _fromUnit,
+                            isPurchaseDropdown: true,
+                          ),
+                        ),
+                        const SizedBox(width: AppStyles.spacingSm),
+                        Expanded(
+                          child: buildUnitDropdown(
+                            label: 'وحدة البيع',
+                            selectedUnit: _toUnit,
+                            isPurchaseDropdown: false,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: AppStyles.spacingMd),
                 TextFormField(

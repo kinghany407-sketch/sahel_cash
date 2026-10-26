@@ -427,7 +427,7 @@ class _CashierScreenState extends State<CashierScreen> {
   Future<void> _showNoStockDialog(Product product) async {
     await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) {
         return DraggableDialog(
@@ -475,7 +475,7 @@ class _CashierScreenState extends State<CashierScreen> {
   ) async {
     await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) {
         return DraggableDialog(
@@ -580,7 +580,7 @@ class _CashierScreenState extends State<CashierScreen> {
 
     await showGeneralDialog<void>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (_, __, ___) {
         return DraggableDialog(
@@ -1007,7 +1007,7 @@ class _CashierScreenState extends State<CashierScreen> {
 
     await showGeneralDialog<void>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return DraggableDialog(
@@ -1160,7 +1160,7 @@ class _CashierScreenState extends State<CashierScreen> {
 
     await showGeneralDialog<void>(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return DraggableDialog(
@@ -2561,7 +2561,7 @@ class _CashierScreenState extends State<CashierScreen> {
   }) async {
     await showGeneralDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: false,
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return DraggableDialog(
