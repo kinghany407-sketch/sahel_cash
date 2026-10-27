@@ -1,4 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/repositories/invoice_repository.dart';
@@ -274,7 +280,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       Text('التاريخ والوقت: ${_formatDateTime(invoice.date)}'),
                       const SizedBox(height: 8),
                       Text(
-                        'طريقة الدفع: ${invoice.paymentMethod == 'cash' ? 'نقدي' : invoice.paymentMethod == 'credit' ? 'آجل' : invoice.paymentMethod}',
+                        'طريقة الدفع: ${invoice.paymentMethod == 'cash' ? 'نقدي' : invoice.paymentMethod == 'credit' ? 'آجل' : invoice.paymentMethod == 'transfer' ? 'تحويل' : invoice.paymentMethod}',
                       ),
                       const SizedBox(height: 16),
                       const Text(
@@ -487,6 +493,264 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     }
   }
 
+  Future<void> _exportToPDF() async {
+    try {
+      final invoices = _filteredInvoices;
+      print('DEBUG: Found ${invoices.length} invoices to export');
+      
+      if (invoices.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('لا توجد فواتير للتصدير'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Debug: Print first invoice data
+      if (invoices.isNotEmpty) {
+        print('DEBUG: First invoice - Number: ${invoices[0].invoiceNumber}, Total: ${invoices[0].total}');
+      }
+
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('جاري إنشاء ملف PDF...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Create PDF document
+      final pdf = pw.Document();
+
+      // Calculate totals
+      final totalAmount = invoices.fold<double>(0.0, (sum, invoice) => sum + invoice.total);
+      final currentDate = DateTime.now();
+      final formattedDate = '${currentDate.year}-${currentDate.month.toString().padLeft(2, '0')}-${currentDate.day.toString().padLeft(2, '0')}';
+
+      print('DEBUG: Total amount: $totalAmount');
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return pw.Padding(
+              padding: const pw.EdgeInsets.all(16),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  pw.Center(
+                    child: pw.Text(
+                      'Invoice Report',
+                      style: pw.TextStyle(
+                        fontSize: 24,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Center(
+                    child: pw.Text(
+                      'Report Date: $formattedDate',
+                      style: pw.TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  pw.SizedBox(height: 16),
+                  pw.Divider(),
+                  pw.SizedBox(height: 16),
+
+                  // Table
+                  pw.Table(
+                    border: pw.TableBorder.all(),
+                    columnWidths: {
+                      0: const pw.FlexColumnWidth(1.5), // Invoice Number
+                      1: const pw.FlexColumnWidth(2), // Date
+                      2: const pw.FlexColumnWidth(2), // Customer
+                      3: const pw.FlexColumnWidth(1.5), // Total
+                      4: const pw.FlexColumnWidth(1.5), // Payment Method
+                      5: const pw.FlexColumnWidth(2), // Cashier
+                    },
+                    children: [
+                      // Header row
+                      pw.TableRow(
+                        decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                        children: [
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Center(
+                              child: pw.Text(
+                                'Invoice #',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Center(
+                              child: pw.Text(
+                                'Date',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Center(
+                              child: pw.Text(
+                                'Customer',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Center(
+                              child: pw.Text(
+                                'Total',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Center(
+                              child: pw.Text(
+                                'Payment',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Center(
+                              child: pw.Text(
+                                'Cashier',
+                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Data rows
+                      ...invoices.map((invoice) {
+                        return pw.TableRow(
+                          children: [
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(8),
+                              child: pw.Center(
+                                child: pw.Text(invoice.invoiceNumber),
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(8),
+                              child: pw.Center(
+                                child: pw.Text(_formatDateTime(invoice.date)),
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(8),
+                              child: pw.Center(
+                                child: pw.Text('Cash'),
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(8),
+                              child: pw.Center(
+                                child: pw.Text(invoice.total.toStringAsFixed(2)),
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(8),
+                              child: pw.Center(
+                                child: pw.Text(invoice.paymentMethod == 'cash' ? 'Cash' : invoice.paymentMethod == 'credit' ? 'Credit' : invoice.paymentMethod == 'transfer' ? 'Transfer' : invoice.paymentMethod),
+                              ),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(8),
+                              child: pw.Center(
+                                child: pw.Text(
+                                  invoice.cashierName?.isNotEmpty == true
+                                      ? invoice.cashierName!
+                                      : (invoice.createdByName?.isNotEmpty == true
+                                          ? invoice.createdByName!
+                                          : 'N/A'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
+                    ],
+                  ),
+                  pw.SizedBox(height: 16),
+                  pw.Divider(),
+                  pw.SizedBox(height: 16),
+
+                  // Summary
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Text(
+                        'Total Invoices: ${invoices.length}',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.Text(
+                        'Total Sales: ${totalAmount.toStringAsFixed(2)} EGP',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      print('DEBUG: PDF created, saving to file...');
+
+      // Save PDF to temporary directory
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/invoices_$formattedDate.pdf';
+      final file = File(path);
+      await file.writeAsBytes(await pdf.save());
+
+      print('DEBUG: PDF saved to: $path');
+
+      // Share the PDF
+      if (mounted) {
+        await Share.shareXFiles(
+          [XFile(path)],
+          subject: 'Invoice Report',
+          text: 'Invoice report for $formattedDate',
+        );
+      }
+    } catch (e, stackTrace) {
+      print('DEBUG: Error exporting PDF: $e');
+      print('DEBUG: Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error exporting PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -517,6 +781,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       ),
                     ),
                     const Spacer(),
+                    IconButton(
+                      tooltip: 'تصدير PDF',
+                      onPressed: _exportToPDF,
+                      icon: const Icon(Icons.picture_as_pdf),
+                    ),
+                    const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'تحديث',
                       onPressed: _loadInvoices,

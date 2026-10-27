@@ -2829,6 +2829,20 @@ class _PaymentDialogState extends State<_PaymentDialog> {
                     },
                   ),
                   const Text('آجل'),
+                  const SizedBox(width: 24),
+                  Radio<String>(
+                    value: 'transfer',
+                    groupValue: _paymentMethod,
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _paymentMethod = value;
+                          _calculateTotal();
+                        });
+                      }
+                    },
+                  ),
+                  const Text('تحويل'),
                 ],
               ),
               const SizedBox(height: 12),

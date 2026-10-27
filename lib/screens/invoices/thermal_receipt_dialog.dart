@@ -129,7 +129,9 @@ class ThermalReceiptDialog extends StatelessWidget {
                               ? 'نقدي'
                               : invoice.paymentMethod == 'credit'
                                   ? 'آجل'
-                                  : invoice.paymentMethod,
+                                  : invoice.paymentMethod == 'transfer'
+                                      ? 'تحويل'
+                                      : invoice.paymentMethod,
                         ),
                         if (customerName != null && customerName!.isNotEmpty)
                           _buildReceiptRow('العميل:', customerName!),
