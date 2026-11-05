@@ -135,213 +135,248 @@ class _ProductTableState extends State<ProductTable> {
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minWidth: constraints.maxWidth,
-                    ),
+                    constraints: BoxConstraints(minWidth: constraints.maxWidth),
                     child: DataTable(
-                  headingRowHeight: 40,
-                  dataRowMinHeight: 40,
-                  dataRowMaxHeight: 40,
-                  columnSpacing: 8,
-                  horizontalMargin: 4,
-                  dividerThickness: 1,
-                  headingRowColor: WidgetStateProperty.all(
-                    AppStyles.primaryColor.withValues(alpha: 0.05),
-                  ),
-                  columns: const [
-                    DataColumn(
-                      label: Text(
-                        'الصنف',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
+                      headingRowHeight: 40,
+                      dataRowMinHeight: 40,
+                      dataRowMaxHeight: 40,
+                      columnSpacing: 8,
+                      horizontalMargin: 4,
+                      dividerThickness: 1,
+                      headingRowColor: WidgetStateProperty.all(
+                        AppStyles.primaryColor.withValues(alpha: 0.05),
                       ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'SKU',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'الباركود',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'سعر البيع',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'المخزون',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'الحد الأدنى',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'الحالة',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'الإجراءات',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppStyles.primaryColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                  rows: widget.products.map((item) {
-                    final bool lowStock = item.isLowStock;
-                    final bool outOfStock = item.quantity <= 0;
-
-                    return DataRow(
-                      cells: [
-                        DataCell(
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: SizedBox(
-                              width: 110,
-                              child: Text(
-                                item.name,
-                                style: const TextStyle(fontSize: 13),
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.right,
-                              ),
+                      columns: const [
+                        DataColumn(
+                          label: Text(
+                            'الصنف',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
                             ),
                           ),
                         ),
-                        DataCell(
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: Text(
-                              item.sku,
-                              style: const TextStyle(fontSize: 13),
-                              textAlign: TextAlign.right,
+                        DataColumn(
+                          label: Text(
+                            'SKU',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
                             ),
                           ),
                         ),
-                        DataCell(
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: Text(
-                              item.barcode.isEmpty ? '—' : item.barcode,
-                              style: const TextStyle(fontSize: 13),
-                              textAlign: TextAlign.right,
+                        DataColumn(
+                          label: Text(
+                            'الباركود',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
                             ),
                           ),
                         ),
-                        DataCell(
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: _buildPriceCell(item),
-                          ),
-                        ),
-                        DataCell(
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: Text(
-                              '${item.displayQuantity} ${item.storageUnit != item.saleUnit ? '${item.storageUnit} (${item.saleUnit})' : item.saleUnit}',
-                              style: const TextStyle(fontSize: 13),
-                              textAlign: TextAlign.right,
+                        DataColumn(
+                          label: Text(
+                            'سعر البيع',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
                             ),
                           ),
                         ),
-                        DataCell(
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: Text(
-                              '${item.minQuantity} ${item.storageUnit}',
-                              style: const TextStyle(fontSize: 13),
-                              textAlign: TextAlign.right,
+                        DataColumn(
+                          label: Text(
+                            'المخزون',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
                             ),
                           ),
                         ),
-                        DataCell(
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: _buildStatusBadge(outOfStock, lowStock),
+                        DataColumn(
+                          label: Text(
+                            'الحد الأدنى',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
+                            ),
                           ),
                         ),
-                        DataCell(
-                          SizedBox(
-                            width: 90,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 1),
-                              child: Row(
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.visibility, size: 15),
-                                    onPressed: () => widget.onView(item),
-                                    tooltip: 'عرض',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  if (widget.onEdit != null)
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, size: 15),
-                                      onPressed: () => widget.onEdit!(item),
-                                      tooltip: 'تعديل',
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                    ),
-                                  const SizedBox(width: 8),
-                                  if (widget.onDelete != null)
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, size: 15, color: Colors.red),
-                                      onPressed: () => widget.onDelete!(item),
-                                      tooltip: 'حذف',
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                    ),
-                                ],
-                              ),
+                        DataColumn(
+                          label: Text(
+                            'الحالة',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            'الإجراءات',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppStyles.primaryColor,
                             ),
                           ),
                         ),
                       ],
-                    );
-                  }).toList(),
+                      rows: widget.products.map((item) {
+                        final bool lowStock = item.isLowStock;
+                        final bool outOfStock = item.quantity <= 0;
+
+                        return DataRow(
+                          cells: [
+                            DataCell(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                child: SizedBox(
+                                  width: 110,
+                                  child: Text(
+                                    item.name,
+                                    style: const TextStyle(fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.right,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                child: Text(
+                                  item.sku,
+                                  style: const TextStyle(fontSize: 13),
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                child: Text(
+                                  item.barcode.isEmpty ? '—' : item.barcode,
+                                  style: const TextStyle(fontSize: 13),
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                child: _buildPriceCell(item),
+                              ),
+                            ),
+                            DataCell(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                child: Text(
+                                  '${item.displayQuantity} ${item.storageUnit != item.saleUnit ? '${item.storageUnit} (${item.saleUnit})' : item.saleUnit}',
+                                  style: const TextStyle(fontSize: 13),
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                child: Text(
+                                  '${item.minQuantity} ${item.storageUnit}',
+                                  style: const TextStyle(fontSize: 13),
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 2,
+                                ),
+                                child: _buildStatusBadge(
+                                  outOfStock,
+                                  lowStock,
+                                  item.isActive,
+                                ),
+                              ),
+                            ),
+                            DataCell(
+                              SizedBox(
+                                width: 90,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 1,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.visibility,
+                                          size: 15,
+                                        ),
+                                        onPressed: () => widget.onView(item),
+                                        tooltip: 'عرض',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      if (widget.onEdit != null)
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.edit,
+                                            size: 15,
+                                          ),
+                                          onPressed: () => widget.onEdit!(item),
+                                          tooltip: 'تعديل',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                      const SizedBox(width: 8),
+                                      if (widget.onDelete != null)
+                                        IconButton(
+                                          icon: Icon(
+                                            item.isActive
+                                                ? Icons.archive_outlined
+                                                : Icons.unarchive_outlined,
+                                            size: 15,
+                                            color: item.isActive
+                                                ? Colors.brown
+                                                : Colors.green,
+                                          ),
+                                          onPressed: () =>
+                                              widget.onDelete!(item),
+                                          tooltip: item.isActive
+                                              ? 'أرشفة'
+                                              : 'استعادة',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
                     ),
                   ),
                 ),
@@ -353,7 +388,25 @@ class _ProductTableState extends State<ProductTable> {
     );
   }
 
-  Widget _buildStatusBadge(bool outOfStock, bool lowStock) {
+  Widget _buildStatusBadge(bool outOfStock, bool lowStock, bool isActive) {
+    if (!isActive) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.brown.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.brown, width: 1),
+        ),
+        child: const Text(
+          'مؤرشف',
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.brown,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    }
     if (outOfStock) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
@@ -414,31 +467,31 @@ class _ProductTableState extends State<ProductTable> {
       // Fallback to old sellPrice if no sale units
       return Text(
         item.sellPrice.toStringAsFixed(2),
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         textAlign: TextAlign.right,
       );
     }
 
     // Show summary of sale units
-    final unitsText = saleUnits.map((u) {
-      final retailText = '${u.saleUnit}: ${u.retailPrice.toStringAsFixed(2)}';
-      final wholesaleText = u.wholesalePrice != null
-          ? ' | جملة ${u.wholesalePrice!.toStringAsFixed(2)}'
-          : '';
-      return '$retailText$wholesaleText';
-    }).join('\n');
+    final unitsText = saleUnits
+        .map((u) {
+          final prices = <String>[
+            if (u.retailPrice != null)
+              'قطاعي ${u.retailPrice!.toStringAsFixed(2)}',
+            if (u.wholesalePrice != null)
+              'جملة ${u.wholesalePrice!.toStringAsFixed(2)}',
+          ];
+          return '${u.saleUnit}: ${prices.isEmpty ? 'لا يوجد سعر مسجل' : prices.join(' | ')}';
+        })
+        .join('\n');
 
     return Tooltip(
       message: unitsText,
       child: Text(
-        saleUnits.length > 1 ? '${saleUnits.length} وحدات' : saleUnits.first.saleUnit,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
+        saleUnits.length > 1
+            ? '${saleUnits.length} وحدات'
+            : saleUnits.first.saleUnit,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         textAlign: TextAlign.right,
       ),
     );
@@ -448,7 +501,7 @@ class _ProductTableState extends State<ProductTable> {
     final screenWidth = MediaQuery.of(context).size.width;
     final sidebarWidth = 230; // Sidebar width
     final availableWidth = screenWidth - sidebarWidth - 40; // Reduced padding
-    
+
     // Calculate crossAxisCount based on screen width
     int crossAxisCount;
 
@@ -459,10 +512,11 @@ class _ProductTableState extends State<ProductTable> {
     } else {
       crossAxisCount = 3;
     }
-    
+
     // Calculate card width
-    final cardWidth = (availableWidth - (crossAxisCount - 1) * 6) / crossAxisCount;
-    
+    final cardWidth =
+        (availableWidth - (crossAxisCount - 1) * 6) / crossAxisCount;
+
     return GridView.builder(
       itemCount: widget.products.length,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -487,8 +541,11 @@ class _ProductTableState extends State<ProductTable> {
           storageUnit: item.storageUnit,
           saleUnit: item.saleUnit,
           isLowStock: item.isLowStock,
+          isActive: item.isActive,
           onEdit: widget.onEdit != null ? () => widget.onEdit!(item) : null,
-          onDelete: widget.onDelete != null ? () => widget.onDelete!(item) : null,
+          onDelete: widget.onDelete != null
+              ? () => widget.onDelete!(item)
+              : null,
           showPurchasePrice: ProductAccess.canAccessPurchasePrice(widget.role),
           showProfit: ProductAccess.canAccessProfit(widget.role),
         );

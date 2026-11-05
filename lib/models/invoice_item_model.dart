@@ -8,6 +8,7 @@ class InvoiceItem {
   final double unitPrice;
   final double total;
   final bool isWholesale;
+  final double? conversionToStorage;
 
   InvoiceItem({
     this.id,
@@ -19,6 +20,7 @@ class InvoiceItem {
     required this.unitPrice,
     double? total,
     required this.isWholesale,
+    this.conversionToStorage,
   }) : total = total ?? (quantity * unitPrice);
 
   Map<String, dynamic> toMap() {
@@ -32,6 +34,7 @@ class InvoiceItem {
       'unitPrice': unitPrice,
       'total': total,
       'isWholesale': isWholesale ? 1 : 0,
+      'conversionToStorage': conversionToStorage,
     };
   }
 
@@ -50,6 +53,7 @@ class InvoiceItem {
           ? (map['total'] as num).toDouble()
           : (qty * price),
       isWholesale: (map['isWholesale'] ?? 0) == 1,
+      conversionToStorage: (map['conversionToStorage'] as num?)?.toDouble(),
     );
   }
 
@@ -63,6 +67,7 @@ class InvoiceItem {
     double? unitPrice,
     double? total,
     bool? isWholesale,
+    double? conversionToStorage,
   }) {
     return InvoiceItem(
       id: id ?? this.id,
@@ -74,6 +79,7 @@ class InvoiceItem {
       unitPrice: unitPrice ?? this.unitPrice,
       total: total ?? this.total,
       isWholesale: isWholesale ?? this.isWholesale,
+      conversionToStorage: conversionToStorage ?? this.conversionToStorage,
     );
   }
 }

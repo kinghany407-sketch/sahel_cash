@@ -30,6 +30,7 @@ class _ReceiptVoucherDialogState extends State<ReceiptVoucherDialog> {
   Invoice? _selectedInvoice;
   bool _isLoading = true;
   bool _isSaving = false;
+  String? _idempotencyKey;
 
   @override
   void initState() {
@@ -64,6 +65,8 @@ class _ReceiptVoucherDialogState extends State<ReceiptVoucherDialog> {
 
     setState(() => _isSaving = true);
     final now = DateTime.now().toIso8601String();
+    _idempotencyKey ??=
+        'receipt:${widget.customer.id}:$now:${amount.toStringAsFixed(2)}';
     try {
       await _receiptRepository.createReceiptVoucher(
         ReceiptVoucher(
@@ -77,6 +80,7 @@ class _ReceiptVoucherDialogState extends State<ReceiptVoucherDialog> {
               ? null
               : _notesController.text.trim(),
           createdAt: now,
+          idempotencyKey: _idempotencyKey!,
         ),
       );
       if (mounted) Navigator.of(context).pop(true);

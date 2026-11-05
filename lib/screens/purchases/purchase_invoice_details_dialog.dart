@@ -30,6 +30,21 @@ class PurchaseInvoiceDetailsDialog extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _detailRow('رقم الفاتورة', invoice.invoiceNumber),
+                _detailRow(
+                  'الحالة',
+                  invoice.status == 'voided' ? 'ملغاة' : 'مرحّلة',
+                ),
+                if (invoice.status == 'voided') ...[
+                  _detailRow(
+                    'سبب الإلغاء',
+                    invoice.cancellationReason ?? 'غير مسجل',
+                  ),
+                  if (invoice.cancelledAt != null)
+                    _detailRow(
+                      'تاريخ الإلغاء',
+                      _formatDate(invoice.cancelledAt!),
+                    ),
+                ],
                 _detailRow('المورد', invoice.supplierName ?? 'غير معروف'),
                 _detailRow('التاريخ', _formatDate(invoice.date)),
                 _detailRow(

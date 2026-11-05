@@ -9,6 +9,10 @@ class ProductRepository {
     return await _databaseHelper.getProducts();
   }
 
+  Future<List<Product>> getActiveProducts() async {
+    return await _databaseHelper.getActiveProducts();
+  }
+
   Future<List<Product>> searchProducts({
     String? query,
     int limit = 20,
@@ -35,12 +39,22 @@ class ProductRepository {
     product.id = await _databaseHelper.insertProduct(product);
   }
 
-  Future<void> updateProduct(Product product) async {
-    await _databaseHelper.updateProduct(product);
+  Future<void> updateProduct(
+    Product product, {
+    String? inventoryChangeReason,
+  }) async {
+    await _databaseHelper.updateProduct(
+      product,
+      inventoryChangeReason: inventoryChangeReason,
+    );
   }
 
   Future<void> deleteProduct(int id) async {
     await _databaseHelper.deleteProduct(id);
+  }
+
+  Future<void> restoreProduct(int id) async {
+    await _databaseHelper.restoreProduct(id);
   }
 
   Future<void> clearProducts() async {
@@ -52,8 +66,12 @@ class ProductRepository {
   Future<List<ProductSaleUnit>> getSaleUnits(int productId) async {
     final saleUnits = await _databaseHelper.getSaleUnits(productId);
     print('DEBUG: ProductRepository.getSaleUnits - productId: $productId');
-    print('DEBUG: ProductRepository.getSaleUnits - saleUnits.length: ${saleUnits.length}');
-    print('DEBUG: ProductRepository.getSaleUnits - saleUnits: ${saleUnits.map((u) => u.saleUnit).toList()}');
+    print(
+      'DEBUG: ProductRepository.getSaleUnits - saleUnits.length: ${saleUnits.length}',
+    );
+    print(
+      'DEBUG: ProductRepository.getSaleUnits - saleUnits: ${saleUnits.map((u) => u.saleUnit).toList()}',
+    );
     return saleUnits;
   }
 

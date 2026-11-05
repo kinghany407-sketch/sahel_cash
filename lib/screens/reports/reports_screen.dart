@@ -7,10 +7,13 @@ import '../../models/expense_model.dart';
 import '../../models/invoice_item_model.dart';
 import '../../models/invoice_model.dart';
 import '../../models/product_model.dart';
+import '../../models/product_sale_unit_model.dart';
 import '../../models/purchase_invoice_model.dart';
 import '../../repositories/expense_repository.dart';
 import '../../repositories/product_repository.dart';
 import '../../repositories/purchase_invoice_repository.dart';
+import '../../utils/product_cost_calculator.dart';
+import '../../utils/sales_cost_summary.dart';
 import '../products/app_styles.dart';
 
 enum ReportPeriod {
@@ -24,12 +27,7 @@ enum ReportPeriod {
   custom,
 }
 
-enum ReportType {
-  sales,
-  inventory,
-  expenses,
-  profits,
-}
+enum ReportType { sales, inventory, expenses, profits }
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -56,6 +54,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   List<Invoice> _allInvoices = [];
   Map<int, List<InvoiceItem>> _itemsByInvoiceId = {};
   Map<int, Product> _productsMap = {};
+  Map<String, ProductSaleUnit> _saleUnitsMap = {};
   List<Expense> _allExpenses = [];
   List<PurchaseInvoice> _allPurchases = [];
 
@@ -66,7 +65,8 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   // Report summaries
   double _totalSales = 0.0;
-  double _totalCost = 0.0;
+  double? _totalCost = 0.0;
+  int _unknownCostCount = 0;
   double _totalExpenses = 0.0;
   double _totalPurchases = 0.0;
   int _totalInvoicesCount = 0;
@@ -76,7 +76,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _applyPeriod(ReportPeriod.thisMonth);
+    _applyPeriod(ReportPeriod.allTime);
     _loadAllData();
   }
 
@@ -98,11 +98,23 @@ class _ReportsScreenState extends State<ReportsScreen>
       case ReportPeriod.yesterday:
         final yesterday = now.subtract(const Duration(days: 1));
         start = DateTime(yesterday.year, yesterday.month, yesterday.day);
-        end = DateTime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59, 999);
+        end = DateTime(
+          yesterday.year,
+          yesterday.month,
+          yesterday.day,
+          23,
+          59,
+          59,
+          999,
+        );
         break;
       case ReportPeriod.last7Days:
         final sevenDaysAgo = now.subtract(const Duration(days: 6));
-        start = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day);
+        start = DateTime(
+          sevenDaysAgo.year,
+          sevenDaysAgo.month,
+          sevenDaysAgo.day,
+        );
         break;
       case ReportPeriod.thisMonth:
         start = DateTime(now.year, now.month, 1);
@@ -111,7 +123,15 @@ class _ReportsScreenState extends State<ReportsScreen>
         final prevMonth = DateTime(now.year, now.month - 1, 1);
         start = DateTime(prevMonth.year, prevMonth.month, 1);
         final lastDayOfPrevMonth = DateTime(now.year, now.month, 0);
-        end = DateTime(lastDayOfPrevMonth.year, lastDayOfPrevMonth.month, lastDayOfPrevMonth.day, 23, 59, 59, 999);
+        end = DateTime(
+          lastDayOfPrevMonth.year,
+          lastDayOfPrevMonth.month,
+          lastDayOfPrevMonth.day,
+          23,
+          59,
+          59,
+          999,
+        );
         break;
       case ReportPeriod.thisYear:
         start = DateTime(now.year, 1, 1);
@@ -155,7 +175,10 @@ class _ReportsScreenState extends State<ReportsScreen>
       final db = await DatabaseHelper.instance.database;
 
       // Fetch Invoices
-      final invoices = await _invoiceRepository.getAllInvoices(limit: 100000);
+      final invoices = await _invoiceRepository.getAllInvoices(
+        limit: 100000,
+        includeVoided: false,
+      );
 
       // Fetch all invoice items
       final itemsMaps = await db.query('invoice_items');
@@ -172,17 +195,27 @@ class _ReportsScreenState extends State<ReportsScreen>
         if (p.id != null) prodMap[p.id!] = p;
       }
 
+      final unitsMaps = await db.query('product_sale_units');
+      final saleUnits = unitsMaps.map(ProductSaleUnit.fromMap);
+      final saleUnitsMap = {
+        for (final unit in saleUnits)
+          '${unit.productId}_${unit.saleUnit.trim().toLowerCase()}': unit,
+      };
+
       // Fetch expenses
       final expenses = await _expenseRepository.getAllExpenses();
 
       // Fetch purchases
-      final purchases = await _purchaseRepository.getAllPurchaseInvoices();
+      final purchases = await _purchaseRepository.getAllPurchaseInvoices(
+        includeVoided: false,
+      );
 
       if (!mounted) return;
       setState(() {
         _allInvoices = invoices;
         _itemsByInvoiceId = itemsByInv;
         _productsMap = prodMap;
+        _saleUnitsMap = saleUnitsMap;
         _allExpenses = expenses;
         _allPurchases = purchases;
       });
@@ -203,31 +236,35 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 
   void _filterData() {
-    final filteredInvoices =
-        _allInvoices.where((inv) => _isDateInRange(inv.date)).toList();
-    final filteredExp =
-        _allExpenses.where((exp) => _isDateInRange(exp.date)).toList();
-    final filteredPurch =
-        _allPurchases.where((p) => _isDateInRange(p.date)).toList();
+    final filteredInvoices = _allInvoices
+        .where((inv) => _isDateInRange(inv.date))
+        .toList();
+    final filteredExp = _allExpenses
+        .where((exp) => _isDateInRange(exp.date))
+        .toList();
+    final filteredPurch = _allPurchases
+        .where((p) => _isDateInRange(p.date))
+        .toList();
 
     double salesSum = 0.0;
     int productsSoldCount = 0;
+    final costSummary = SalesCostSummary();
 
     for (final inv in filteredInvoices) {
       salesSum += inv.total;
       final items = _itemsByInvoiceId[inv.id] ?? [];
+      if (items.isEmpty) costSummary.addCost(null);
       for (final item in items) {
         productsSoldCount += item.quantity.toInt();
-      }
-    }
-
-    double costSum = 0.0;
-    for (final inv in filteredInvoices) {
-      final items = _itemsByInvoiceId[inv.id] ?? [];
-      for (final item in items) {
         final product = _productsMap[item.productId];
-        final costPerStorage = product?.buyPrice ?? 0.0;
-        costSum += item.quantity * costPerStorage;
+        costSummary.addCost(
+          ProductCostCalculator.itemCost(
+            product,
+            item.saleUnit,
+            item.quantity,
+            _saleUnitsMap,
+          ),
+        );
       }
     }
     final expSum = filteredExp.fold(0.0, (sum, exp) => sum + exp.amount);
@@ -238,12 +275,17 @@ class _ReportsScreenState extends State<ReportsScreen>
       _filteredExpenses = filteredExp;
       _filteredPurchases = filteredPurch;
       _totalSales = salesSum;
-      _totalCost = costSum;
+      _totalCost = costSummary.totalCost;
+      _unknownCostCount = costSummary.unknownCostCount;
       _totalExpenses = expSum;
       _totalPurchases = purchSum;
       _totalInvoicesCount = filteredInvoices.length;
       _totalProductsSold = productsSoldCount;
     });
+  }
+
+  String _formatProfit(double? value) {
+    return value == null ? 'غير مكتمل' : '${value.toStringAsFixed(2)} ج.م';
   }
 
   Future<void> _selectCustomDateRange() async {
@@ -339,7 +381,11 @@ class _ReportsScreenState extends State<ReportsScreen>
             color: AppStyles.primaryColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: const Icon(Icons.bar_chart, color: AppStyles.primaryColor, size: 28),
+          child: const Icon(
+            Icons.bar_chart,
+            color: AppStyles.primaryColor,
+            size: 28,
+          ),
         ),
         const SizedBox(width: 12),
         const Column(
@@ -453,7 +499,8 @@ class _ReportsScreenState extends State<ReportsScreen>
   Widget _buildSummaryCards() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cardWidth = (constraints.maxWidth - (AppStyles.spacingSm * 4)) / 5;
+        final cardWidth =
+            (constraints.maxWidth - (AppStyles.spacingSm * 4)) / 5;
         final isNarrow = constraints.maxWidth < 900;
 
         if (isNarrow) {
@@ -508,10 +555,20 @@ class _ReportsScreenState extends State<ReportsScreen>
                   Expanded(
                     child: _buildSummaryCard(
                       title: 'صافي الربح',
-                      value: '${(_totalSales - _totalCost - _totalExpenses).toStringAsFixed(2)} ج.م',
-                      subtitle: 'تقديري',
-                      color: Colors.green,
-                      icon: Icons.trending_up,
+                      value: _formatProfit(
+                        _totalCost == null
+                            ? null
+                            : _totalSales - _totalCost! - _totalExpenses,
+                      ),
+                      subtitle: _totalCost == null
+                          ? 'التكلفة غير مكتملة ($_unknownCostCount بند)'
+                          : 'تقديري',
+                      color: _totalCost == null
+                          ? Colors.blueGrey
+                          : Colors.green,
+                      icon: _totalCost == null
+                          ? Icons.info_outline
+                          : Icons.trending_up,
                     ),
                   ),
                 ],
@@ -570,10 +627,18 @@ class _ReportsScreenState extends State<ReportsScreen>
               width: cardWidth,
               child: _buildSummaryCard(
                 title: 'صافي الربح',
-                value: '${(_totalSales - _totalCost - _totalExpenses).toStringAsFixed(2)} ج.م',
-                subtitle: 'تقديري',
-                color: Colors.green,
-                icon: Icons.trending_up,
+                value: _formatProfit(
+                  _totalCost == null
+                      ? null
+                      : _totalSales - _totalCost! - _totalExpenses,
+                ),
+                subtitle: _totalCost == null
+                    ? 'التكلفة غير مكتملة ($_unknownCostCount بند)'
+                    : 'تقديري',
+                color: _totalCost == null ? Colors.blueGrey : Colors.green,
+                icon: _totalCost == null
+                    ? Icons.info_outline
+                    : Icons.trending_up,
               ),
             ),
           ],
@@ -638,10 +703,7 @@ class _ReportsScreenState extends State<ReportsScreen>
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -727,15 +789,16 @@ class _ReportsScreenState extends State<ReportsScreen>
                           barTouchData: BarTouchData(
                             enabled: true,
                             touchTooltipData: BarTouchTooltipData(
-                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                                return BarTooltipItem(
-                                  '${rod.toY.toStringAsFixed(2)} ج.م',
-                                  const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                );
-                              },
+                              getTooltipItem:
+                                  (group, groupIndex, rod, rodIndex) {
+                                    return BarTooltipItem(
+                                      '${rod.toY.toStringAsFixed(2)} ج.م',
+                                      const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    );
+                                  },
                             ),
                           ),
                           titlesData: FlTitlesData(
@@ -752,7 +815,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 getTitlesWidget: (value, meta) {
                                   if (value == 0) return const Text('0');
                                   if (value >= 1000) {
-                                    return Text('${(value / 1000).toStringAsFixed(0)}k');
+                                    return Text(
+                                      '${(value / 1000).toStringAsFixed(0)}k',
+                                    );
                                   }
                                   return Text(value.toStringAsFixed(0));
                                 },
@@ -767,7 +832,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                                     padding: EdgeInsets.only(top: 8, bottom: 8),
                                     child: Text(
                                       'المبيعات',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   );
                                 },
@@ -795,8 +862,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                           ],
                         ),
                       ),
-                  ),
               ),
+            ),
           ],
         ),
       ),
@@ -843,25 +910,42 @@ class _ReportsScreenState extends State<ReportsScreen>
                       DataColumn(label: Text('الربح')),
                     ],
                     rows: _filteredInvoices.map((invoice) {
-                      double invoiceCost = 0.0;
+                      final invoiceCost = SalesCostSummary();
                       final items = _itemsByInvoiceId[invoice.id] ?? [];
+                      if (items.isEmpty) invoiceCost.addCost(null);
                       for (final item in items) {
                         final product = _productsMap[item.productId];
-                        final costPerStorage = product?.buyPrice ?? 0.0;
-                        invoiceCost += item.quantity * costPerStorage;
+                        invoiceCost.addCost(
+                          ProductCostCalculator.itemCost(
+                            product,
+                            item.saleUnit,
+                            item.quantity,
+                            _saleUnitsMap,
+                          ),
+                        );
                       }
-                      final profit = invoice.total - invoiceCost;
+                      final profit = invoiceCost.profitFor(invoice.total);
                       return DataRow(
                         cells: [
                           DataCell(Text('#${invoice.id}')),
                           DataCell(Text(invoice.date.split('T')[0])),
-                          DataCell(Text(invoice.paymentMethod == 'cash' ? 'نقدي' : 'آجل')),
-                          DataCell(Text('${invoice.total.toStringAsFixed(2)} ج.م')),
                           DataCell(
                             Text(
-                              '${profit.toStringAsFixed(2)} ج.م',
+                              invoice.paymentMethod == 'cash' ? 'نقدي' : 'آجل',
+                            ),
+                          ),
+                          DataCell(
+                            Text('${invoice.total.toStringAsFixed(2)} ج.م'),
+                          ),
+                          DataCell(
+                            Text(
+                              _formatProfit(profit),
                               style: TextStyle(
-                                color: profit >= 0 ? Colors.green : Colors.red,
+                                color: profit == null
+                                    ? Colors.blueGrey
+                                    : profit >= 0
+                                    ? Colors.green
+                                    : Colors.red,
                               ),
                             ),
                           ),
@@ -946,10 +1030,7 @@ class _ReportsScreenState extends State<ReportsScreen>
         children: [
           Text(
             label,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade700,
-            ),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
           ),
           const SizedBox(height: 8),
           Text(
@@ -973,8 +1054,10 @@ class _ReportsScreenState extends State<ReportsScreen>
     for (final invoice in _filteredInvoices) {
       final items = _itemsByInvoiceId[invoice.id] ?? [];
       for (final item in items) {
-        productSales[item.productId] = (productSales[item.productId] ?? 0) + item.total;
-        productQuantities[item.productId] = (productQuantities[item.productId] ?? 0) + item.quantity.toInt();
+        productSales[item.productId] =
+            (productSales[item.productId] ?? 0) + item.total;
+        productQuantities[item.productId] =
+            (productQuantities[item.productId] ?? 0) + item.quantity.toInt();
       }
     }
 
@@ -1015,7 +1098,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                         cells: [
                           DataCell(Text(product?.name ?? 'غير معروف')),
                           DataCell(Text('$quantity')),
-                          DataCell(Text('${entry.value.toStringAsFixed(2)} ج.م')),
+                          DataCell(
+                            Text('${entry.value.toStringAsFixed(2)} ج.م'),
+                          ),
                         ],
                       );
                     }).toList(),
@@ -1135,7 +1220,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                           DataCell(Text(expense.date.split('T')[0])),
                           DataCell(Text(expense.notes ?? '-')),
                           DataCell(Text(expense.category)),
-                          DataCell(Text('${expense.amount.toStringAsFixed(2)} ج.م')),
+                          DataCell(
+                            Text('${expense.amount.toStringAsFixed(2)} ج.م'),
+                          ),
                         ],
                       );
                     }).toList(),
@@ -1148,9 +1235,13 @@ class _ReportsScreenState extends State<ReportsScreen>
 
   // ================= TAB 4: PROFITS REPORT =================
   Widget _buildProfitsReportTab() {
-    final grossProfit = _totalSales - _totalCost;
-    final netProfit = grossProfit - _totalExpenses;
-    final profitMargin = _totalSales > 0 ? (netProfit / _totalSales) * 100 : 0.0;
+    final grossProfit = _totalCost == null ? null : _totalSales - _totalCost!;
+    final netProfit = grossProfit == null ? null : grossProfit - _totalExpenses;
+    final profitMargin = netProfit == null
+        ? null
+        : _totalSales > 0
+        ? (netProfit / _totalSales) * 100
+        : 0.0;
 
     return SingleChildScrollView(
       child: Column(
@@ -1163,7 +1254,11 @@ class _ReportsScreenState extends State<ReportsScreen>
     );
   }
 
-  Widget _buildProfitsSummaryCard(double grossProfit, double netProfit, double profitMargin) {
+  Widget _buildProfitsSummaryCard(
+    double? grossProfit,
+    double? netProfit,
+    double? profitMargin,
+  ) {
     return Card(
       color: Colors.white,
       elevation: 1,
@@ -1189,23 +1284,29 @@ class _ReportsScreenState extends State<ReportsScreen>
                 Expanded(
                   child: _buildProfitStat(
                     'مجمل الربح',
-                    '${grossProfit.toStringAsFixed(2)} ج.م',
-                    Colors.teal,
+                    _formatProfit(grossProfit),
+                    grossProfit == null ? Colors.blueGrey : Colors.teal,
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: _buildProfitStat(
                     'صافي الربح',
-                    '${netProfit.toStringAsFixed(2)} ج.م',
-                    netProfit >= 0 ? Colors.green : Colors.red,
+                    _formatProfit(netProfit),
+                    netProfit == null
+                        ? Colors.blueGrey
+                        : netProfit >= 0
+                        ? Colors.green
+                        : Colors.red,
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: _buildProfitStat(
                     'هامش الربح',
-                    '${profitMargin.toStringAsFixed(1)}%',
+                    profitMargin == null
+                        ? 'غير مكتمل'
+                        : '${profitMargin.toStringAsFixed(1)}%',
                     Colors.indigo,
                   ),
                 ),
@@ -1229,10 +1330,7 @@ class _ReportsScreenState extends State<ReportsScreen>
         children: [
           Text(
             label,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade700,
-            ),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
           ),
           const SizedBox(height: 8),
           Text(
@@ -1249,7 +1347,21 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 
   Widget _buildProfitsChartCard() {
-    final grossProfit = _totalSales - _totalCost;
+    final totalCost = _totalCost;
+    if (totalCost == null) {
+      return Card(
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'تعذر رسم الأرباح لأن تكلفة المبيعات غير مكتملة '
+            '($_unknownCostCount بند).',
+          ),
+        ),
+      );
+    }
+
+    final grossProfit = _totalSales - totalCost;
     final netProfit = grossProfit - _totalExpenses;
 
     return Card(
@@ -1281,7 +1393,12 @@ class _ReportsScreenState extends State<ReportsScreen>
                     : BarChart(
                         BarChartData(
                           alignment: BarChartAlignment.spaceAround,
-                          maxY: math.max(_totalSales, math.max(grossProfit.abs(), netProfit.abs())) * 1.15,
+                          maxY:
+                              math.max(
+                                _totalSales,
+                                math.max(grossProfit.abs(), netProfit.abs()),
+                              ) *
+                              1.15,
                           barTouchData: BarTouchData(
                             enabled: true,
                             touchTooltipData: BarTouchTooltipData(
@@ -1322,7 +1439,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 getTitlesWidget: (value, meta) {
                                   if (value == 0) return const Text('0');
                                   if (value >= 1000) {
-                                    return Text('${(value / 1000).toStringAsFixed(0)}k');
+                                    return Text(
+                                      '${(value / 1000).toStringAsFixed(0)}k',
+                                    );
                                   }
                                   return Text(value.toStringAsFixed(0));
                                 },
@@ -1337,7 +1456,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                                     padding: EdgeInsets.only(top: 8, bottom: 8),
                                     child: Text(
                                       'المقارنة',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   );
                                 },
@@ -1348,9 +1469,16 @@ class _ReportsScreenState extends State<ReportsScreen>
                             show: true,
                             drawVerticalLine: false,
                             horizontalInterval: math.max(
-                                  1.0,
-                                  math.max(_totalSales, math.max(grossProfit.abs(), netProfit.abs())) / 5,
-                                ),
+                              1.0,
+                              math.max(
+                                    _totalSales,
+                                    math.max(
+                                      grossProfit.abs(),
+                                      netProfit.abs(),
+                                    ),
+                                  ) /
+                                  5,
+                            ),
                           ),
                           borderData: FlBorderData(show: false),
                           barGroups: [
@@ -1371,7 +1499,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 ),
                                 BarChartRodData(
                                   toY: netProfit,
-                                  color: netProfit >= 0 ? Colors.green : Colors.red,
+                                  color: netProfit >= 0
+                                      ? Colors.green
+                                      : Colors.red,
                                   width: 30,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
@@ -1380,8 +1510,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                           ],
                         ),
                       ),
-                  ),
               ),
+            ),
           ],
         ),
       ),

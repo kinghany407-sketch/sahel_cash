@@ -1,5 +1,3 @@
-import 'package:sqflite/sqflite.dart';
-
 import '../../database/database_helper.dart';
 import '../../models/invoice_model.dart';
 import '../../models/invoice_item_model.dart';
@@ -7,21 +5,21 @@ import '../../models/invoice_item_model.dart';
 class InvoiceRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
+  @Deprecated(
+    'Use createInvoiceWithItems to record inventory and account effects',
+  )
   Future<int> createInvoice(Invoice invoice) async {
-    final db = await _databaseHelper.database;
-    return await db.insert(
-      'invoices',
-      invoice.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+    throw StateError(
+      'Invoices must be created with their items through createInvoiceWithItems',
     );
   }
 
+  @Deprecated(
+    'Use createInvoiceWithItems to record inventory and account effects',
+  )
   Future<int> createInvoiceItem(InvoiceItem item) async {
-    final db = await _databaseHelper.database;
-    return await db.insert(
-      'invoice_items',
-      item.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+    throw StateError(
+      'Invoice items must be created with their invoice through createInvoiceWithItems',
     );
   }
 
@@ -40,14 +38,20 @@ class InvoiceRepository {
   Future<List<Invoice>> getInvoicesForCustomer(
     int customerId, {
     bool creditOnly = false,
+    bool includeVoided = false,
   }) async {
     final db = await _databaseHelper.database;
+    final filters = <String>['customerId = ?'];
+    final args = <Object?>[customerId];
+    if (creditOnly) {
+      filters.add('paymentMethod = ?');
+      args.add('credit');
+    }
+    if (!includeVoided) filters.add("status != 'voided'");
     final maps = await db.query(
       'invoices',
-      where: creditOnly
-          ? 'customerId = ? AND paymentMethod = ?'
-          : 'customerId = ?',
-      whereArgs: creditOnly ? [customerId, 'credit'] : [customerId],
+      where: filters.join(' AND '),
+      whereArgs: args,
       orderBy: 'date DESC, id DESC',
     );
     return maps.map(Invoice.fromMap).toList();
@@ -66,10 +70,15 @@ class InvoiceRepository {
     return Invoice.fromMap(maps.first);
   }
 
-  Future<List<Invoice>> getAllInvoices({int limit = 20, int offset = 0}) async {
+  Future<List<Invoice>> getAllInvoices({
+    int limit = 20,
+    int offset = 0,
+    bool includeVoided = true,
+  }) async {
     final db = await _databaseHelper.database;
     final maps = await db.query(
       'invoices',
+      where: includeVoided ? null : "status != 'voided'",
       orderBy: 'id DESC',
       limit: limit,
       offset: offset,
@@ -78,14 +87,16 @@ class InvoiceRepository {
     return List.generate(maps.length, (index) => Invoice.fromMap(maps[index]));
   }
 
-  Future<List<Invoice>> getTodayInvoices() async {
+  Future<List<Invoice>> getTodayInvoices({bool includeVoided = true}) async {
     final now = DateTime.now();
     final todayStr =
         '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final db = await _databaseHelper.database;
     final maps = await db.query(
       'invoices',
-      where: 'date LIKE ?',
+      where: includeVoided
+          ? 'date LIKE ?'
+          : "date LIKE ? AND status != 'voided'",
       whereArgs: ['$todayStr%'],
       orderBy: 'id DESC',
     );
@@ -108,21 +119,10 @@ class InvoiceRepository {
     );
   }
 
-  Future<void> deleteInvoiceItemsByInvoiceId(int invoiceId) async {
-    final db = await _databaseHelper.database;
-    await db.delete(
-      'invoice_items',
-      where: 'invoiceId = ?',
-      whereArgs: [invoiceId],
+  Future<void> cancelInvoice(int invoiceId, {required String reason}) {
+    return _databaseHelper.cancelSalesInvoiceWithEffects(
+      invoiceId,
+      reason: reason,
     );
-  }
-
-  Future<void> deleteInvoice(int invoiceId) async {
-    final db = await _databaseHelper.database;
-    await db.delete('invoices', where: 'id = ?', whereArgs: [invoiceId]);
-  }
-
-  Future<void> deleteInvoiceWithEffects(int invoiceId) {
-    return _databaseHelper.deleteSalesInvoiceWithEffects(invoiceId);
   }
 }

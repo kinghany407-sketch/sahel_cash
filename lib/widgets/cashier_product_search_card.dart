@@ -87,12 +87,20 @@ class _CashierProductSearchCardState extends State<CashierProductSearchCard> {
     return 'نفد';
   }
 
-  double _displayPrice() {
-    if (_saleUnits.isNotEmpty) {
-      return _saleUnits.first.retailPrice;
+  ProductSaleUnit? _displaySaleUnit() {
+    for (final unit in _saleUnits) {
+      if (unit.retailPrice != null) return unit;
     }
+    for (final unit in _saleUnits) {
+      if (unit.wholesalePrice != null) return unit;
+    }
+    return null;
+  }
 
-    return widget.product.sellPrice;
+  double? _displayPrice() {
+    if (_saleUnits.isEmpty) return widget.product.sellPrice;
+    final unit = _displaySaleUnit();
+    return unit?.retailPrice ?? unit?.wholesalePrice;
   }
 
   @override
@@ -230,7 +238,8 @@ class _CashierProductSearchCardState extends State<CashierProductSearchCard> {
                   children: [
                     Flexible(
                       child: Text(
-                        '${displayPrice.toStringAsFixed(2)}',
+                        displayPrice?.toStringAsFixed(2) ??
+                            'لا يوجد سعر مسجل',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -242,7 +251,7 @@ class _CashierProductSearchCardState extends State<CashierProductSearchCard> {
                     ),
                     if (!_isLoadingUnits)
                       Text(
-                        _saleUnits.isNotEmpty ? _saleUnits.first.saleUnit : product.saleUnit,
+                        _displaySaleUnit()?.saleUnit ?? product.saleUnit,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,

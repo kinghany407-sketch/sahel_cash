@@ -18,10 +18,12 @@ class PurchaseInvoiceRepository {
   Future<List<PurchaseInvoice>> getAllPurchaseInvoices({
     String? query,
     int? supplierId,
+    bool includeVoided = true,
   }) async {
     final maps = await _databaseHelper.getPurchaseInvoices(
       query: query,
       supplierId: supplierId,
+      includeVoided: includeVoided,
     );
     return maps.map(PurchaseInvoice.fromMap).toList();
   }
@@ -32,8 +34,8 @@ class PurchaseInvoiceRepository {
     return PurchaseInvoice.fromMap(map);
   }
 
-  Future<int> deletePurchaseInvoice(int id) async {
-    return _databaseHelper.deletePurchaseInvoice(id);
+  Future<int> cancelPurchaseInvoice(int id, {required String reason}) {
+    return _databaseHelper.cancelPurchaseInvoice(id, reason: reason);
   }
 
   Future<String> getNextInvoiceNumber() async {

@@ -16,6 +16,25 @@ class UnitsManagerDialog extends StatefulWidget {
 class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
   final TextEditingController _controller = TextEditingController();
   String? _editingUnit;
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnits();
+  }
+
+  Future<void> _loadUnits() async {
+    try {
+      await widget.unitsManager.loadUnits();
+      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showError('تعذر تحميل الوحدات: $e');
+    }
+  }
 
   @override
   void dispose() {
@@ -23,7 +42,8 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
     super.dispose();
   }
 
-  void _saveUnit() {
+  Future<void> _saveUnit() async {
+    if (_isLoading || _isSaving) return;
     final value = _controller.text.trim();
     if (value.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -36,41 +56,43 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
       return;
     }
 
-    if (widget.unitsManager.availableUnits.contains(value) &&
-        _editingUnit != value) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('هذه الوحدة موجودة بالفعل'),
-          backgroundColor: AppStyles.warningColor,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return;
-    }
+    setState(() => _isSaving = true);
+    try {
+      final editing = _editingUnit != null;
+      if (editing) {
+        await widget.unitsManager.updateUnit(_editingUnit!, value);
+      } else {
+        await widget.unitsManager.addUnit(value);
+      }
 
-    if (_editingUnit == null) {
-      widget.unitsManager.addUnit(value);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم إضافة الوحدة بنجاح'),
+        SnackBar(
+          content: Text(
+            editing ? 'تم تحديث الوحدة بنجاح' : 'تم إضافة الوحدة بنجاح',
+          ),
           backgroundColor: AppStyles.successColor,
           behavior: SnackBarBehavior.floating,
         ),
       );
-    } else {
-      widget.unitsManager.updateUnit(_editingUnit!, value);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم تحديث الوحدة بنجاح'),
-          backgroundColor: AppStyles.successColor,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _controller.clear();
+      _editingUnit = null;
+      setState(() {});
+    } catch (e) {
+      if (mounted) _showError(e.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
 
-    _controller.clear();
-    _editingUnit = null;
-    setState(() {});
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppStyles.errorColor,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Future<void> _confirmDelete(String unit) async {
@@ -94,8 +116,12 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
     );
 
     if (confirmed == true) {
-      widget.unitsManager.deleteUnit(unit);
-      setState(() {});
+      try {
+        await widget.unitsManager.deleteUnit(unit);
+        if (mounted) setState(() {});
+      } catch (e) {
+        if (mounted) _showError(e.toString().replaceFirst('Bad state: ', ''));
+      }
     }
   }
 
@@ -114,6 +140,7 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
               TextField(
                 controller: _controller,
                 textDirection: TextDirection.rtl,
+                enabled: !_isLoading && !_isSaving,
                 decoration: AppStyles.inputDecoration(
                   labelText: _editingUnit == null
                       ? 'اسم الوحدة الجديدة'
@@ -127,8 +154,10 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _saveUnit,
-                      icon: Icon(_editingUnit == null ? Icons.save : Icons.edit),
+                      onPressed: _isLoading || _isSaving ? null : _saveUnit,
+                      icon: Icon(
+                        _editingUnit == null ? Icons.save : Icons.edit,
+                      ),
                       label: Text(_editingUnit == null ? 'حفظ' : 'تعديل'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppStyles.primaryColor,
@@ -137,7 +166,9 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
                           vertical: AppStyles.spacingSm,
                         ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                          borderRadius: BorderRadius.circular(
+                            AppStyles.radiusMd,
+                          ),
                         ),
                       ),
                     ),
@@ -153,7 +184,9 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey.shade700,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                          borderRadius: BorderRadius.circular(
+                            AppStyles.radiusMd,
+                          ),
                         ),
                       ),
                       child: const Text('إلغاء'),
@@ -175,72 +208,78 @@ class _UnitsManagerDialogState extends State<UnitsManagerDialog> {
               ),
               const SizedBox(height: AppStyles.spacingSm),
               Expanded(
-                child: SingleChildScrollView(
-                  child: Wrap(
-                    spacing: AppStyles.spacingSm,
-                    runSpacing: AppStyles.spacingSm,
-                    children: widget.unitsManager.availableUnits.map((unit) {
-                      final isEditing = _editingUnit == unit;
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppStyles.spacingSm,
-                          vertical: AppStyles.spacingXs,
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : SingleChildScrollView(
+                        child: Wrap(
+                          spacing: AppStyles.spacingSm,
+                          runSpacing: AppStyles.spacingSm,
+                          children: widget.unitsManager.availableUnits.map((
+                            unit,
+                          ) {
+                            final isEditing = _editingUnit == unit;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppStyles.spacingSm,
+                                vertical: AppStyles.spacingXs,
+                              ),
+                              decoration: AppStyles.chipDecoration(
+                                isSelected: isEditing,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () {
+                                      _controller.text = unit;
+                                      _editingUnit = unit;
+                                      setState(() {});
+                                    },
+                                    child: Text(
+                                      unit,
+                                      style: TextStyle(
+                                        fontWeight: isEditing
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        color: isEditing
+                                            ? AppStyles.primaryColor
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppStyles.spacingXs),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.edit,
+                                      size: AppStyles.iconSizeMd,
+                                      color: Colors.blue,
+                                    ),
+                                    onPressed: () {
+                                      _controller.text = unit;
+                                      _editingUnit = unit;
+                                      setState(() {});
+                                    },
+                                    constraints: const BoxConstraints(),
+                                    padding: EdgeInsets.zero,
+                                    splashRadius: AppStyles.iconSizeLg,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.delete,
+                                      size: AppStyles.iconSizeMd,
+                                      color: AppStyles.errorColor,
+                                    ),
+                                    onPressed: () => _confirmDelete(unit),
+                                    constraints: const BoxConstraints(),
+                                    padding: EdgeInsets.zero,
+                                    splashRadius: AppStyles.iconSizeLg,
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
                         ),
-                        decoration: AppStyles.chipDecoration(isSelected: isEditing),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            GestureDetector(
-                              onTap: () {
-                                _controller.text = unit;
-                                _editingUnit = unit;
-                                setState(() {});
-                              },
-                              child: Text(
-                                unit,
-                                style: TextStyle(
-                                  fontWeight: isEditing
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  color: isEditing
-                                      ? AppStyles.primaryColor
-                                      : Colors.black87,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppStyles.spacingXs),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.edit,
-                                size: AppStyles.iconSizeMd,
-                                color: Colors.blue,
-                              ),
-                              onPressed: () {
-                                _controller.text = unit;
-                                _editingUnit = unit;
-                                setState(() {});
-                              },
-                              constraints: const BoxConstraints(),
-                              padding: EdgeInsets.zero,
-                              splashRadius: AppStyles.iconSizeLg,
-                            ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.delete,
-                                size: AppStyles.iconSizeMd,
-                                color: AppStyles.errorColor,
-                              ),
-                              onPressed: () => _confirmDelete(unit),
-                              constraints: const BoxConstraints(),
-                              padding: EdgeInsets.zero,
-                              splashRadius: AppStyles.iconSizeLg,
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
+                      ),
               ),
             ],
           ),

@@ -1,8 +1,4 @@
-enum UserRole {
-  admin,
-  supervisor,
-  cashier,
-}
+enum UserRole { admin, supervisor, cashier }
 
 class User {
   int? id;
@@ -37,7 +33,7 @@ class User {
     return User(
       id: map['id'],
       username: map['username'],
-      password: map['password'],
+      password: '',
       fullName: map['fullName'],
       role: _parseRole(map['role']),
       isActive: (map['isActive'] ?? 1) == 1,

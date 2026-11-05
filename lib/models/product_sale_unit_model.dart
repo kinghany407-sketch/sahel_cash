@@ -2,7 +2,7 @@ class ProductSaleUnit {
   int? id;
   final int productId;
   final String saleUnit;
-  final double retailPrice;
+  final double? retailPrice;
   final double? wholesalePrice;
   final double conversionToStorage;
   final bool allowSellingByAmount;
@@ -34,7 +34,7 @@ class ProductSaleUnit {
       id: map['id'],
       productId: map['productId'] as int,
       saleUnit: map['saleUnit'] as String,
-      retailPrice: (map['retailPrice'] ?? 0).toDouble(),
+      retailPrice: (map['retailPrice'] as num?)?.toDouble(),
       wholesalePrice: map['wholesalePrice'] != null
           ? (map['wholesalePrice'] as num).toDouble()
           : null,

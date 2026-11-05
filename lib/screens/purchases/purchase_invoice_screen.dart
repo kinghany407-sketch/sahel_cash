@@ -101,7 +101,7 @@ class _PurchaseInvoiceScreenState extends State<PurchaseInvoiceScreen> {
     try {
       final results = await Future.wait([
         _supplierRepository.getAllSuppliers(),
-        _productRepository.getProducts(),
+        _productRepository.getActiveProducts(),
         _invoiceRepository.getNextInvoiceNumber(),
       ]);
       if (!mounted) return;

@@ -12,6 +12,9 @@ class Invoice {
   final String? discountType;
   final double paidAmount;
   final double changeAmount;
+  final String status;
+  final String? cancelledAt;
+  final String? cancellationReason;
 
   Invoice({
     this.id,
@@ -27,6 +30,9 @@ class Invoice {
     this.discountType,
     this.paidAmount = 0.0,
     this.changeAmount = 0.0,
+    this.status = 'posted',
+    this.cancelledAt,
+    this.cancellationReason,
   });
 
   int? get createdBy => cashierId;
@@ -47,6 +53,9 @@ class Invoice {
       'discountType': discountType,
       'paidAmount': paidAmount,
       'changeAmount': changeAmount,
+      'status': status,
+      'cancelledAt': cancelledAt,
+      'cancellationReason': cancellationReason,
     };
   }
 
@@ -65,6 +74,9 @@ class Invoice {
       discountType: map['discountType'],
       paidAmount: (map['paidAmount'] ?? 0.0).toDouble(),
       changeAmount: (map['changeAmount'] ?? 0.0).toDouble(),
+      status: map['status'] ?? 'posted',
+      cancelledAt: map['cancelledAt'],
+      cancellationReason: map['cancellationReason'],
     );
   }
 
@@ -82,6 +94,9 @@ class Invoice {
     String? discountType,
     double? paidAmount,
     double? changeAmount,
+    String? status,
+    String? cancelledAt,
+    String? cancellationReason,
   }) {
     return Invoice(
       id: id ?? this.id,
@@ -97,7 +112,9 @@ class Invoice {
       discountType: discountType ?? this.discountType,
       paidAmount: paidAmount ?? this.paidAmount,
       changeAmount: changeAmount ?? this.changeAmount,
+      status: status ?? this.status,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
     );
   }
 }
-

@@ -1,4 +1,5 @@
 import '../database/database_helper.dart';
+import '../models/customer_account_transaction_model.dart';
 import '../models/receipt_voucher_model.dart';
 
 class ReceiptVoucherRepository {
@@ -13,5 +14,14 @@ class ReceiptVoucherRepository {
       customerId,
     );
     return maps.map(ReceiptVoucher.fromMap).toList();
+  }
+
+  Future<List<CustomerAccountTransaction>> getAccountTransactionsForCustomer(
+    int customerId,
+  ) async {
+    final maps = await _databaseHelper.getCustomerAccountTransactions(
+      customerId,
+    );
+    return maps.map(CustomerAccountTransaction.fromMap).toList();
   }
 }

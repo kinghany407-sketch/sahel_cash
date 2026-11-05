@@ -9,6 +9,7 @@ class ReceiptVoucher {
   final String? notes;
   final String createdAt;
   final String? invoiceNumber;
+  final String idempotencyKey;
 
   ReceiptVoucher({
     this.id,
@@ -20,6 +21,7 @@ class ReceiptVoucher {
     this.paymentMethod = 'cash',
     this.notes,
     required this.createdAt,
+    required this.idempotencyKey,
     this.invoiceNumber,
   });
 
@@ -46,6 +48,8 @@ class ReceiptVoucher {
       paymentMethod: map['paymentMethod'] ?? 'cash',
       notes: map['notes'],
       createdAt: map['createdAt'] ?? '',
+      idempotencyKey:
+          map['idempotencyKey'] ?? 'legacy-receipt:${map['id'] ?? 'unknown'}',
       invoiceNumber: map['invoiceNumber'],
     );
   }

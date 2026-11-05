@@ -16,7 +16,8 @@ class AddCustomerDialog extends StatefulWidget {
 
 class _AddCustomerDialogState extends State<AddCustomerDialog> {
   final CustomerRepository _repository = CustomerRepository();
-  final DraggableDialogController _dialogController = DraggableDialogController();
+  final DraggableDialogController _dialogController =
+      DraggableDialogController();
 
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -31,7 +32,8 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
       _nameController.text = widget.customer!.name;
       _phoneController.text = widget.customer!.phone ?? '';
       _addressController.text = widget.customer!.address ?? '';
-      _initialBalanceController.text = widget.customer!.initialBalance.toStringAsFixed(2);
+      _initialBalanceController.text = widget.customer!.initialBalance
+          .toStringAsFixed(2);
       _notesController.text = widget.customer!.notes ?? '';
     }
   }
@@ -62,7 +64,9 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
       return;
     }
 
-    final initialBalance = double.tryParse(_initialBalanceController.text.trim());
+    final initialBalance = double.tryParse(
+      _initialBalanceController.text.trim(),
+    );
     if (initialBalance == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -81,11 +85,17 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
     final customer = Customer(
       id: widget.customer?.id,
       name: name,
-      phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
-      address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
+      phone: _phoneController.text.trim().isEmpty
+          ? null
+          : _phoneController.text.trim(),
+      address: _addressController.text.trim().isEmpty
+          ? null
+          : _addressController.text.trim(),
       initialBalance: initialBalance,
       currentBalance: widget.customer?.currentBalance ?? initialBalance,
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+      notes: _notesController.text.trim().isEmpty
+          ? null
+          : _notesController.text.trim(),
       createdAt: widget.customer?.createdAt ?? now,
       updatedAt: now,
     );
@@ -165,13 +175,24 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
                 // Initial Balance
                 TextField(
                   controller: _initialBalanceController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  enabled: widget.customer == null,
                   decoration: AppStyles.inputDecoration(
                     labelText: 'الرصيد الأولي',
                     prefixIcon: Icons.account_balance_wallet,
                   ),
                   textDirection: TextDirection.rtl,
                 ),
+                if (widget.customer != null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'لا يمكن تعديل الرصيد الأولي بعد إنشاء العميل؛ استخدم تسوية مالية موثقة.',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                  ),
                 const SizedBox(height: 16),
 
                 // Notes
@@ -211,7 +232,10 @@ class _AddCustomerDialogState extends State<AddCustomerDialog> {
                       onPressed: () => Navigator.of(context).pop(),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey.shade700,
-                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 24,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),

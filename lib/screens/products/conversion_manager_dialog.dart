@@ -19,10 +19,31 @@ class ConversionManagerDialog extends StatefulWidget {
 }
 
 class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
+  final UnitsManager _unitsManager = UnitsManager();
   String? _fromUnit;
   String? _toUnit;
   ConversionTemplate? _editingTemplate;
   final TextEditingController _factorController = TextEditingController();
+  bool _unitsLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnits();
+  }
+
+  Future<void> _loadUnits() async {
+    try {
+      await _unitsManager.loadUnits();
+      if (mounted) setState(() => _unitsLoaded = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('تعذر تحميل الوحدات: $e')));
+      }
+    }
+  }
 
   Future<void> _showUnitDialog({
     required String title,
@@ -62,12 +83,23 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
 
     if (result == null || result.isEmpty) return;
 
-    final unitsManager = UnitsManager();
-    if (isEdit) {
-      if (initialValue == null || initialValue.isEmpty) return;
-      unitsManager.updateUnit(initialValue, result);
-    } else {
-      unitsManager.addUnit(result);
+    try {
+      if (isEdit) {
+        if (initialValue == null || initialValue.isEmpty) return;
+        await _unitsManager.updateUnit(initialValue, result);
+      } else {
+        await _unitsManager.addUnit(result);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Bad state: ', '')),
+            backgroundColor: AppStyles.errorColor,
+          ),
+        );
+      }
+      return;
     }
 
     if (isPurchaseDropdown) {
@@ -82,7 +114,6 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
     required bool isPurchaseDropdown,
     required String action,
   }) async {
-    final unitsManager = UnitsManager();
     final currentValue = isPurchaseDropdown ? _fromUnit : _toUnit;
 
     if (action == 'add') {
@@ -95,9 +126,9 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
     }
 
     if (currentValue == null || currentValue.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى اختيار وحدة أولاً')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('يرجى اختيار وحدة أولاً')));
       return;
     }
 
@@ -132,15 +163,26 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
       );
 
       if (confirmed == true) {
-        unitsManager.deleteUnit(currentValue);
-        if (isPurchaseDropdown) {
-          if (_fromUnit == currentValue) {
-            _fromUnit = null;
+        try {
+          await _unitsManager.deleteUnit(currentValue);
+          if (isPurchaseDropdown) {
+            if (_fromUnit == currentValue) {
+              _fromUnit = null;
+            }
+          } else if (_toUnit == currentValue) {
+            _toUnit = null;
           }
-        } else if (_toUnit == currentValue) {
-          _toUnit = null;
+          if (mounted) setState(() {});
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(e.toString().replaceFirst('Bad state: ', '')),
+                backgroundColor: AppStyles.errorColor,
+              ),
+            );
+          }
         }
-        setState(() {});
       }
     }
   }
@@ -258,7 +300,7 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final availableUnits = UnitsManager().availableUnits;
+    final availableUnits = _unitsManager.availableUnits;
     final templates = widget.conversionManager.templates;
 
     Widget buildUnitDropdown({
@@ -293,7 +335,11 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.add_circle_outline, color: AppStyles.successColor, size: 18),
+              Icon(
+                Icons.add_circle_outline,
+                color: AppStyles.successColor,
+                size: 18,
+              ),
               SizedBox(width: 8),
               Flexible(
                 child: Text(
@@ -344,7 +390,9 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
 
       return DropdownButtonFormField<String>(
         isExpanded: true,
-        initialValue: availableUnits.contains(selectedUnit) ? selectedUnit : null,
+        initialValue: availableUnits.contains(selectedUnit)
+            ? selectedUnit
+            : null,
         decoration: AppStyles.inputDecoration(
           labelText: label,
           prefixIcon: isPurchaseDropdown
@@ -352,46 +400,48 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
               : Icons.sell_outlined,
         ),
         items: unitItems,
-        onChanged: (value) async {
-          if (value == '__add_unit__') {
-            await _handleUnitAction(
-              isPurchaseDropdown: isPurchaseDropdown,
-              action: 'add',
-            );
-            return;
-          }
-          if (value == '__edit_unit__') {
-            await _handleUnitAction(
-              isPurchaseDropdown: isPurchaseDropdown,
-              action: 'edit',
-            );
-            return;
-          }
-          if (value == '__delete_unit__') {
-            await _handleUnitAction(
-              isPurchaseDropdown: isPurchaseDropdown,
-              action: 'delete',
-            );
-            return;
-          }
-          if (isPurchaseDropdown) {
-            setState(() {
-              _fromUnit = value;
-              // Auto-set factor to 1 if units are the same
-              if (_fromUnit == _toUnit && _fromUnit != null) {
-                _factorController.text = '1';
-              }
-            });
-          } else {
-            setState(() {
-              _toUnit = value;
-              // Auto-set factor to 1 if units are the same
-              if (_fromUnit == _toUnit && _toUnit != null) {
-                _factorController.text = '1';
-              }
-            });
-          }
-        },
+        onChanged: !_unitsLoaded
+            ? null
+            : (value) async {
+                if (value == '__add_unit__') {
+                  await _handleUnitAction(
+                    isPurchaseDropdown: isPurchaseDropdown,
+                    action: 'add',
+                  );
+                  return;
+                }
+                if (value == '__edit_unit__') {
+                  await _handleUnitAction(
+                    isPurchaseDropdown: isPurchaseDropdown,
+                    action: 'edit',
+                  );
+                  return;
+                }
+                if (value == '__delete_unit__') {
+                  await _handleUnitAction(
+                    isPurchaseDropdown: isPurchaseDropdown,
+                    action: 'delete',
+                  );
+                  return;
+                }
+                if (isPurchaseDropdown) {
+                  setState(() {
+                    _fromUnit = value;
+                    // Auto-set factor to 1 if units are the same
+                    if (_fromUnit == _toUnit && _fromUnit != null) {
+                      _factorController.text = '1';
+                    }
+                  });
+                } else {
+                  setState(() {
+                    _toUnit = value;
+                    // Auto-set factor to 1 if units are the same
+                    if (_fromUnit == _toUnit && _toUnit != null) {
+                      _factorController.text = '1';
+                    }
+                  });
+                }
+              },
       );
     }
 
@@ -481,7 +531,9 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
                         backgroundColor: AppStyles.primaryColor,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                          borderRadius: BorderRadius.circular(
+                            AppStyles.radiusMd,
+                          ),
                         ),
                       ),
                     ),
@@ -495,7 +547,9 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey.shade700,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                          borderRadius: BorderRadius.circular(
+                            AppStyles.radiusMd,
+                          ),
                         ),
                       ),
                     ),
@@ -513,7 +567,9 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
                 const SizedBox(height: AppStyles.spacingSm),
                 if (templates.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: AppStyles.spacingXxl),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppStyles.spacingXxl,
+                    ),
                     child: Center(
                       child: Column(
                         children: [
@@ -602,14 +658,20 @@ class _ConversionManagerDialogState extends State<ConversionManagerDialog> {
                               DataCell(
                                 IconButton(
                                   tooltip: 'تعديل',
-                                  icon: const Icon(Icons.edit, color: Colors.blue),
+                                  icon: const Icon(
+                                    Icons.edit,
+                                    color: Colors.blue,
+                                  ),
                                   onPressed: () => _startEdit(template),
                                 ),
                               ),
                               DataCell(
                                 IconButton(
                                   tooltip: 'حذف',
-                                  icon: const Icon(Icons.delete, color: AppStyles.errorColor),
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: AppStyles.errorColor,
+                                  ),
                                   onPressed: () => _confirmDelete(template),
                                 ),
                               ),

@@ -12,6 +12,9 @@ class PurchaseInvoice {
   final String? notes;
   final String createdAt;
   final String updatedAt;
+  final String status;
+  final String? cancelledAt;
+  final String? cancellationReason;
   final String? supplierName;
   final List<PurchaseInvoiceItem> items;
 
@@ -27,6 +30,9 @@ class PurchaseInvoice {
     this.notes,
     required this.createdAt,
     required this.updatedAt,
+    this.status = 'posted',
+    this.cancelledAt,
+    this.cancellationReason,
     this.supplierName,
     this.items = const [],
   });
@@ -44,6 +50,9 @@ class PurchaseInvoice {
       'notes': notes,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
+      'status': status,
+      'cancelledAt': cancelledAt,
+      'cancellationReason': cancellationReason,
     };
   }
 
@@ -61,6 +70,9 @@ class PurchaseInvoice {
       notes: map['notes'],
       createdAt: map['createdAt'] ?? '',
       updatedAt: map['updatedAt'] ?? '',
+      status: map['status'] ?? 'posted',
+      cancelledAt: map['cancelledAt'],
+      cancellationReason: map['cancellationReason'],
       supplierName: map['supplierName'],
       items:
           mappedItems

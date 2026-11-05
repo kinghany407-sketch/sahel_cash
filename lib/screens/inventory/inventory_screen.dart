@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../database/database_helper.dart';
+import '../../models/inventory_movement_model.dart';
 import '../../models/product_model.dart';
 import '../../models/user_model.dart';
 import '../../repositories/product_repository.dart';
@@ -16,16 +18,12 @@ class InventoryScreen extends StatefulWidget {
   State<InventoryScreen> createState() => _InventoryScreenState();
 }
 
-enum InventoryFilter {
-  all,
-  available,
-  low,
-  out,
-}
+enum InventoryFilter { all, available, low, out }
 
 class _InventoryScreenState extends State<InventoryScreen> {
   final ProductRepository _repository = ProductRepository();
-  final DraggableDialogController _dialogController = DraggableDialogController();
+  final DraggableDialogController _dialogController =
+      DraggableDialogController();
 
   final List<Product> _products = [];
   final TextEditingController _searchController = TextEditingController();
@@ -93,7 +91,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final name = product.name.toLowerCase();
       final sku = product.sku.toLowerCase();
       final barcode = product.barcode.toLowerCase();
-      return name.contains(query) || sku.contains(query) || barcode.contains(query);
+      return name.contains(query) ||
+          sku.contains(query) ||
+          barcode.contains(query);
     }).toList();
   }
 
@@ -112,16 +112,25 @@ class _InventoryScreenState extends State<InventoryScreen> {
 
   int get _totalProducts => _products.length;
 
-  int get _availableCount =>
-      _products.where((product) => product.quantity > product.minQuantity).length;
+  int get _availableCount => _products
+      .where((product) => product.quantity > product.minQuantity)
+      .length;
 
-  int get _lowCount =>
-      _products.where((product) => product.quantity > 0 && product.quantity <= product.minQuantity).length;
+  int get _lowCount => _products
+      .where(
+        (product) =>
+            product.quantity > 0 && product.quantity <= product.minQuantity,
+      )
+      .length;
 
-  int get _outCount => _products.where((product) => product.quantity <= 0).length;
+  int get _outCount =>
+      _products.where((product) => product.quantity <= 0).length;
 
   double get _inventoryValue {
-    return _products.fold(0.0, (sum, product) => sum + (product.quantity * product.sellPrice));
+    return _products.fold(
+      0.0,
+      (sum, product) => sum + (product.quantity * product.sellPrice),
+    );
   }
 
   Color _statusColor(Product product) {
@@ -140,6 +149,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final quantityController = TextEditingController(text: '1');
     final reasonController = TextEditingController();
     final quantityFocusNode = FocusNode();
+    final idempotencyKey =
+        'manual-adjustment:${product.id}:${DateTime.now().microsecondsSinceEpoch}';
     String operation = 'إدخال';
 
     await showGeneralDialog(
@@ -175,7 +186,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
-                        Text('الكمية الحالية: ${product.displayQuantity} ${product.storageUnit}'),
+                        Text(
+                          'الكمية الحالية: ${product.displayQuantity} ${product.storageUnit}',
+                        ),
                         const SizedBox(height: 12),
                         SegmentedButton<String>(
                           segments: const [
@@ -199,8 +212,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         TextField(
                           controller: quantityController,
                           focusNode: quantityFocusNode,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(labelText: 'الكمية'),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'الكمية',
+                          ),
                           autofocus: true,
                           onSubmitted: (_) async {
                             await _commitStockChange(
@@ -209,6 +226,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               reasonController,
                               operation,
                               context,
+                              idempotencyKey,
                             );
                           },
                         ),
@@ -216,7 +234,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         TextField(
                           controller: reasonController,
                           decoration: InputDecoration(
-                            labelText: operation == 'إدخال' ? 'السبب (شراء جديد / مرتجع)' : 'السبب (تالف / مفقود / هدية)',
+                            labelText: operation == 'إدخال'
+                                ? 'السبب (شراء جديد / مرتجع)'
+                                : 'السبب (تالف / مفقود / هدية)',
                           ),
                         ),
                       ],
@@ -236,6 +256,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         reasonController,
                         operation,
                         context,
+                        idempotencyKey,
                       );
                     },
                     child: const Text('تأكيد'),
@@ -255,13 +276,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
     TextEditingController reasonController,
     String operation,
     BuildContext context,
+    String idempotencyKey,
   ) async {
     final quantity = double.tryParse(quantityController.text) ?? 0;
     if (quantity <= 0) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('أدخل كمية صحيحة')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('أدخل كمية صحيحة')));
       }
       return;
     }
@@ -270,19 +292,60 @@ class _InventoryScreenState extends State<InventoryScreen> {
       await _showInsufficientStockDialog(product, quantity, product.quantity);
       return;
     }
-
-    if (operation == 'إدخال') {
-      product.quantity += quantity;
-    } else {
-      product.quantity -= quantity;
+    if (reasonController.text.trim().isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('سبب حركة المخزون مطلوب')));
+      }
+      return;
     }
 
-    await _repository.updateProduct(product);
-    if (!mounted) return;
+    final now = DateTime.now().toIso8601String();
+    final prefs = await SharedPreferences.getInstance();
+    if (!context.mounted) return;
+    final reason = reasonController.text.trim();
+    final isInbound = operation == 'إدخال';
+    try {
+      await DatabaseHelper.instance.recordInventoryMovement(
+        InventoryMovement(
+          productId: product.id!,
+          movementType: isInbound
+              ? InventoryMovement.adjustmentIn
+              : (reason.contains('تالف')
+                    ? InventoryMovement.damage
+                    : InventoryMovement.adjustmentOut),
+          direction: isInbound
+              ? InventoryMovement.inbound
+              : InventoryMovement.outbound,
+          quantity: quantity,
+          storageUnit: product.storageUnit,
+          costStatus: InventoryMovement.costUnknown,
+          sourceType: InventoryMovement.manualAdjustment,
+          movementAt: now,
+          recordedAt: now,
+          createdByUserId: prefs.getInt('user_id'),
+          reason: reason.isEmpty ? null : reason,
+          idempotencyKey: idempotencyKey,
+        ),
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر تحديث المخزون: $error'),
+            backgroundColor: AppStyles.errorColor,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+    if (!context.mounted) return;
 
     await _loadProducts();
 
-    if (mounted) {
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تم التحديث بنجاح'),
@@ -292,7 +355,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       );
     }
 
-    if (Navigator.of(context).canPop()) {
+    if (context.mounted && Navigator.of(context).canPop()) {
       Navigator.pop(context);
     }
   }
@@ -323,10 +386,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(product.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    product.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 12),
-                  Text('الكمية المطلوبة: ${requestedQuantity.toStringAsFixed(2)} ${product.storageUnit}'),
-                  Text('الكمية المتاحة: ${availableQuantity.toStringAsFixed(2)} ${product.storageUnit}'),
+                  Text(
+                    'الكمية المطلوبة: ${requestedQuantity.toStringAsFixed(2)} ${product.storageUnit}',
+                  ),
+                  Text(
+                    'الكمية المتاحة: ${availableQuantity.toStringAsFixed(2)} ${product.storageUnit}',
+                  ),
                 ],
               ),
             ),
@@ -383,23 +453,51 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   textDirection: TextDirection.rtl,
                   children: [
                     Expanded(
-                      child: _buildStatCard('إجمالي المنتجات', _totalProducts.toString(), Icons.inventory_2, Colors.indigo),
+                      child: _buildStatCard(
+                        'إجمالي المنتجات',
+                        _totalProducts.toString(),
+                        Icons.inventory_2,
+                        Colors.indigo,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildStatCard('متوفرة', _availableCount.toString(), Icons.circle, Colors.green, emoji: '🟢'),
+                      child: _buildStatCard(
+                        'متوفرة',
+                        _availableCount.toString(),
+                        Icons.circle,
+                        Colors.green,
+                        emoji: '🟢',
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildStatCard('منخفضة', _lowCount.toString(), Icons.circle, Colors.orange, emoji: '🟠'),
+                      child: _buildStatCard(
+                        'منخفضة',
+                        _lowCount.toString(),
+                        Icons.circle,
+                        Colors.orange,
+                        emoji: '🟠',
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildStatCard('نافدة', _outCount.toString(), Icons.circle, Colors.red, emoji: '🔴'),
+                      child: _buildStatCard(
+                        'نافدة',
+                        _outCount.toString(),
+                        Icons.circle,
+                        Colors.red,
+                        emoji: '🔴',
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildStatCard('قيمة المخزون', _inventoryValue.toStringAsFixed(2), Icons.account_balance_wallet, Colors.blue),
+                      child: _buildStatCard(
+                        'قيمة المخزون',
+                        _inventoryValue.toStringAsFixed(2),
+                        Icons.account_balance_wallet,
+                        Colors.blue,
+                      ),
                     ),
                   ],
                 ),
@@ -449,11 +547,21 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             });
                           },
                           icon: const Icon(Icons.grid_view, size: 14),
-                          label: const Text('عرض الكروت', style: TextStyle(fontSize: 11)),
+                          label: const Text(
+                            'عرض الكروت',
+                            style: TextStyle(fontSize: 11),
+                          ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _isGridView ? AppStyles.primaryColor : Colors.white,
-                            foregroundColor: _isGridView ? Colors.white : AppStyles.primaryColor,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            backgroundColor: _isGridView
+                                ? AppStyles.primaryColor
+                                : Colors.white,
+                            foregroundColor: _isGridView
+                                ? Colors.white
+                                : AppStyles.primaryColor,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
                           ),
                         ),
                       ),
@@ -467,11 +575,21 @@ class _InventoryScreenState extends State<InventoryScreen> {
                             });
                           },
                           icon: const Icon(Icons.table_chart, size: 14),
-                          label: const Text('عرض الجدول', style: TextStyle(fontSize: 11)),
+                          label: const Text(
+                            'عرض الجدول',
+                            style: TextStyle(fontSize: 11),
+                          ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: !_isGridView ? AppStyles.primaryColor : Colors.white,
-                            foregroundColor: !_isGridView ? Colors.white : AppStyles.primaryColor,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            backgroundColor: !_isGridView
+                                ? AppStyles.primaryColor
+                                : Colors.white,
+                            foregroundColor: !_isGridView
+                                ? Colors.white
+                                : AppStyles.primaryColor,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
                           ),
                         ),
                       ),
@@ -483,21 +601,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : _isGridView
-                          ? GridView.builder(
-                              padding: const EdgeInsets.all(4),
-                              itemCount: _filteredProducts.length,
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      ? GridView.builder(
+                          padding: const EdgeInsets.all(4),
+                          itemCount: _filteredProducts.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 4,
                                 childAspectRatio: 1.3,
                                 crossAxisSpacing: 4,
                                 mainAxisSpacing: 4,
                               ),
-                              itemBuilder: (context, index) {
-                                final product = _filteredProducts[index];
-                                return _buildProductCard(product);
-                              },
-                            )
-                          : _buildInventoryTable(),
+                          itemBuilder: (context, index) {
+                            final product = _filteredProducts[index];
+                            return _buildProductCard(product);
+                          },
+                        )
+                      : _buildInventoryTable(),
                 ),
               ],
             ),
@@ -525,7 +644,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color, {String emoji = ''}) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color, {
+    String emoji = '',
+  }) {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -543,7 +668,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: const TextStyle(fontSize: 11)),
-                Text('$emoji $value', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(
+                  '$emoji $value',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
               ],
             ),
           ),
@@ -580,7 +711,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   children: [
                     Icon(Icons.circle, color: _statusColor(product), size: 10),
                     const SizedBox(width: 4),
-                    Text(_statusLabel(product), style: TextStyle(color: _statusColor(product))),
+                    Text(
+                      _statusLabel(product),
+                      style: TextStyle(color: _statusColor(product)),
+                    ),
                   ],
                 ),
               ),
@@ -606,7 +740,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
     final hasBarcode = product.barcode.trim().isNotEmpty;
 
     return GestureDetector(
-      onTap: _currentUserRole != UserRole.cashier ? () => _openStockDialog(product) : null,
+      onTap: _currentUserRole != UserRole.cashier
+          ? () => _openStockDialog(product)
+          : null,
       child: Card(
         color: Colors.white,
         elevation: 3,
@@ -629,18 +765,27 @@ class _InventoryScreenState extends State<InventoryScreen> {
                       product.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                 ],
               ),
               if (hasSku) ...[
                 const SizedBox(height: 2),
-                Text('SKU: ${product.sku}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(
+                  'SKU: ${product.sku}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ],
               if (hasBarcode) ...[
                 const SizedBox(height: 2),
-                Text('الباركود: ${product.barcode}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(
+                  'الباركود: ${product.barcode}',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ],
               const SizedBox(height: 2),
               Row(
@@ -648,7 +793,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 children: [
                   const Icon(Icons.scale, size: 12, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Text('الكمية: ${product.displayQuantity} ${product.storageUnit}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  Text(
+                    'الكمية: ${product.displayQuantity} ${product.storageUnit}',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 2),
@@ -657,13 +808,23 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 children: [
                   Icon(Icons.circle, color: _statusColor(product), size: 10),
                   const SizedBox(width: 4),
-                  Text(_statusLabel(product), style: TextStyle(color: _statusColor(product), fontSize: 13)),
+                  Text(
+                    _statusLabel(product),
+                    style: TextStyle(
+                      color: _statusColor(product),
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 2),
               Text(
                 'السعر: ${product.sellPrice.toStringAsFixed(2)} جنيه',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: AppStyles.primaryColor, fontSize: 15),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppStyles.primaryColor,
+                  fontSize: 15,
+                ),
               ),
             ],
           ),
@@ -679,7 +840,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
         width: 40,
         height: 40,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => _categoryIconFor(product.category),
+        errorBuilder: (context, error, stackTrace) =>
+            _categoryIconFor(product.category),
       );
     }
 
@@ -693,9 +855,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return const Icon(Icons.shopping_bag, color: Colors.orange, size: 40);
     }
     if (normalized.contains('شنط بلاستيك') || normalized.contains('شنط')) {
-      return const Icon(Icons.shopping_bag_outlined, color: Colors.brown, size: 40);
+      return const Icon(
+        Icons.shopping_bag_outlined,
+        color: Colors.brown,
+        size: 40,
+      );
     }
-    if (normalized.contains('أكواب ورقية') || normalized.contains('أكواب') || normalized.contains('كوب')) {
+    if (normalized.contains('أكواب ورقية') ||
+        normalized.contains('أكواب') ||
+        normalized.contains('كوب')) {
       return const Icon(Icons.local_cafe, color: Colors.red, size: 40);
     }
     if (normalized.contains('أطباق فويل') || normalized.contains('فويل')) {

@@ -20,7 +20,8 @@ class ProductsScreen extends StatefulWidget {
 
 class _ProductsScreenState extends State<ProductsScreen> {
   final ProductRepository _repository = ProductRepository();
-  final DraggableDialogController _dialogController = DraggableDialogController();
+  final DraggableDialogController _dialogController =
+      DraggableDialogController();
 
   final List<Product> products = [];
   final TextEditingController searchController = TextEditingController();
@@ -111,7 +112,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Future<void> _showEditDialog(Product product) async {
     final currentViewMode = _isGridView;
     final currentSearchText = searchText;
-    
+
     final Product? updatedProduct = await showGeneralDialog<Product>(
       context: context,
       barrierDismissible: false,
@@ -160,15 +161,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
       pageBuilder: (_, __, ___) {
         return DraggableDialog(
           controller: _dialogController,
-          title: 'تأكيد الحذف',
+          title: product.isActive ? 'أرشفة الصنف' : 'استعادة الصنف',
           width: 400,
           height: 250,
           child: AlertDialog(
-            title: const Text(
-              'تأكيد الحذف',
+            title: Text(
+              product.isActive ? 'تأكيد أرشفة الصنف' : 'تأكيد استعادة الصنف',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            content: Text('هل تريد حذف الصنف "${product.name}"؟'),
+            content: Text(
+              product.isActive
+                  ? 'سيتم إيقاف استخدام "${product.name}" مع الاحتفاظ برصيده وفواتيره وحركاته.'
+                  : 'سيعود الصنف "${product.name}" متاحًا للبيع والشراء.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -180,7 +185,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('حذف'),
+                child: Text(product.isActive ? 'أرشفة' : 'استعادة'),
               ),
             ],
           ),
@@ -191,11 +196,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
     if (confirmed != true || product.id == null) return;
 
     try {
-      await _repository.deleteProduct(product.id!);
+      if (product.isActive) {
+        await _repository.deleteProduct(product.id!);
+      } else {
+        await _repository.restoreProduct(product.id!);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم حذف الصنف بنجاح'),
+          SnackBar(
+            content: Text(
+              product.isActive
+                  ? 'تمت أرشفة الصنف مع الاحتفاظ بسجلاته'
+                  : 'تمت استعادة الصنف',
+            ),
             backgroundColor: AppStyles.successColor,
             behavior: SnackBarBehavior.floating,
           ),
@@ -237,28 +250,28 @@ class _ProductsScreenState extends State<ProductsScreen> {
     final filteredProducts = products.where((product) {
       final query = searchText.toLowerCase().trim();
       final normalizedNameQuery = _normalizeArabicSearchText(searchText);
-      
+
       if (query.isEmpty) return true;
-      
+
       // Search by name
-      final nameMatch = _normalizeArabicSearchText(product.name).contains(
-        normalizedNameQuery,
-      );
-      
+      final nameMatch = _normalizeArabicSearchText(
+        product.name,
+      ).contains(normalizedNameQuery);
+
       // Search by SKU (only if SKU is not empty)
       bool skuMatch = false;
       if (product.sku.isNotEmpty) {
         final productSku = product.sku.toLowerCase().trim();
         skuMatch = productSku.contains(query);
       }
-      
+
       // Search by barcode (only if barcode is not empty)
       bool barcodeMatch = false;
       if (product.barcode.isNotEmpty) {
         final productBarcode = product.barcode.toLowerCase().trim();
         barcodeMatch = productBarcode.contains(query);
       }
-      
+
       return nameMatch || skuMatch || barcodeMatch;
     }).toList();
 
@@ -384,7 +397,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           child: ElevatedButton.icon(
                             onPressed: _showAddDialog,
                             icon: const Icon(Icons.add, size: 14),
-                            label: const Text('إضافة صنف', style: TextStyle(fontSize: 11)),
+                            label: const Text(
+                              'إضافة صنف',
+                              style: TextStyle(fontSize: 11),
+                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppStyles.primaryColor,
                               foregroundColor: Colors.white,
@@ -408,9 +424,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               );
                             },
                             icon: const Icon(Icons.dataset, size: 14),
-                            label: const Text('البيانات الأساسية', style: TextStyle(fontSize: 11)),
+                            label: const Text(
+                              'البيانات الأساسية',
+                              style: TextStyle(fontSize: 11),
+                            ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppStyles.primaryColor.withValues(alpha: 0.1),
+                              backgroundColor: AppStyles.primaryColor
+                                  .withValues(alpha: 0.1),
                               foregroundColor: AppStyles.primaryColor,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -427,15 +447,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 // Product list
                 Expanded(
                   child: _isLoading
-                      ? const Center(
-                          child: CircularProgressIndicator(),
-                        )
+                      ? const Center(child: CircularProgressIndicator())
                       : RefreshIndicator(
                           onRefresh: _loadProducts,
                           child: ProductTable(
                             products: filteredProducts,
-                            onEdit: _currentRole != UserRole.cashier ? (product) => _showEditDialog(product) : null,
-                            onDelete: _currentRole != UserRole.cashier ? (product) => _confirmDelete(product) : null,
+                            onEdit: _currentRole != UserRole.cashier
+                                ? (product) => _showEditDialog(product)
+                                : null,
+                            onDelete: _currentRole != UserRole.cashier
+                                ? (product) => _confirmDelete(product)
+                                : null,
                             onView: (product) => _showViewDialog(product),
                             role: _currentRole,
                             initialIsGrid: _isGridView,

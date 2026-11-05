@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/repositories/invoice_repository.dart';
 import '../../models/customer_model.dart';
+import '../../models/customer_account_transaction_model.dart';
 import '../../models/invoice_model.dart';
 import '../../models/receipt_voucher_model.dart';
 import '../../repositories/customer_repository.dart';
@@ -31,6 +32,7 @@ class _CustomerStatementDialogState extends State<CustomerStatementDialog> {
   late Customer _customer;
   List<Invoice> _invoices = [];
   List<ReceiptVoucher> _receipts = [];
+  List<CustomerAccountTransaction> _accountTransactions = [];
   bool _isLoading = true;
 
   @override
@@ -51,13 +53,17 @@ class _CustomerStatementDialogState extends State<CustomerStatementDialog> {
       final customer = await _customerRepository.getCustomerById(customerId);
       final invoices = await _invoiceRepository.getInvoicesForCustomer(
         customerId,
+        includeVoided: true,
       );
       final receipts = await _receiptRepository.getForCustomer(customerId);
+      final accountTransactions = await _receiptRepository
+          .getAccountTransactionsForCustomer(customerId);
       if (!mounted) return;
       setState(() {
         _customer = customer ?? widget.customer;
         _invoices = invoices;
         _receipts = receipts;
+        _accountTransactions = accountTransactions;
       });
     } catch (error) {
       if (mounted) {
@@ -200,6 +206,37 @@ class _CustomerStatementDialogState extends State<CustomerStatementDialog> {
 
                   Card(
                     elevation: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'دفتر حركات الحساب',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'الرصيد الافتتاحي يحفظ رصيد ما قبل تفعيل الدفتر؛ ولا يعيد بناء تاريخ الفواتير القديمة.',
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                          const SizedBox(height: 12),
+                          if (_accountTransactions.isEmpty)
+                            const Text('لا توجد حركات موثقة في الدفتر')
+                          else
+                            ..._accountTransactions.map(_buildAccountEntry),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Card(
+                    elevation: 2,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -234,7 +271,11 @@ class _CustomerStatementDialogState extends State<CustomerStatementDialog> {
                               (invoice) => ListTile(
                                 contentPadding: EdgeInsets.zero,
                                 leading: const Icon(Icons.receipt_long),
-                                title: Text(invoice.invoiceNumber),
+                                title: Text(
+                                  invoice.status == 'voided'
+                                      ? '${invoice.invoiceNumber} • ملغاة'
+                                      : invoice.invoiceNumber,
+                                ),
                                 subtitle: Text(
                                   '${invoice.date} • ${invoice.paymentMethod == 'credit' ? 'آجل' : 'نقدي'}',
                                 ),
@@ -381,6 +422,55 @@ class _CustomerStatementDialogState extends State<CustomerStatementDialog> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAccountEntry(CustomerAccountTransaction transaction) {
+    final title = switch (transaction.transactionType) {
+      'opening_balance' => 'رصيد افتتاحي',
+      'credit_invoice' =>
+        'فاتورة آجلة ${transaction.invoiceNumber ?? transaction.sourceDocumentId ?? ''}',
+      'receipt' =>
+        transaction.receiptNumber == null
+            ? 'سند قبض'
+            : 'سند قبض ${transaction.receiptNumber}',
+      'invoice_reversal' =>
+        'عكس فاتورة ${transaction.invoiceNumber ?? transaction.sourceDocumentId ?? ''}',
+      'adjustment' => 'تسوية رصيد',
+      _ => transaction.transactionType,
+    };
+    final sourceDescription = transaction.transactionType == 'receipt'
+        ? transaction.invoiceId == null
+              ? 'قبض غير مربوط بفاتورة'
+              : 'مرتبط بفاتورة ${transaction.invoiceNumber ?? transaction.invoiceId}'
+        : transaction.reason;
+    final date = DateTime.tryParse(transaction.occurredAt);
+    final dateText = date == null
+        ? transaction.occurredAt
+        : '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final positive = transaction.amount > 0;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        positive ? Icons.add_circle_outline : Icons.remove_circle_outline,
+        color: positive ? AppStyles.errorColor : AppStyles.successColor,
+      ),
+      title: Text(title),
+      subtitle: Text(
+        [
+          dateText,
+          if (sourceDescription != null && sourceDescription.isNotEmpty)
+            sourceDescription,
+          if (transaction.invoiceStatus == 'voided') 'الفاتورة ملغاة',
+        ].join(' • '),
+      ),
+      trailing: Text(
+        '${positive ? '+' : ''}${transaction.amount.toStringAsFixed(2)} ج.م',
+        style: TextStyle(
+          color: positive ? AppStyles.errorColor : AppStyles.successColor,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 

@@ -23,6 +23,7 @@ class Product {
   String saleUnit;
   double conversionFactor;
   int unitsPerPurchaseUnit;
+  bool isActive;
 
   Product({
     this.id,
@@ -43,6 +44,7 @@ class Product {
     this.saleUnit = 'قطعة',
     this.conversionFactor = 1,
     this.unitsPerPurchaseUnit = 1,
+    this.isActive = true,
   });
 
   bool get isLowStock => quantity <= minQuantity;
@@ -84,6 +86,7 @@ class Product {
       'saleUnit': saleUnit,
       'conversionFactor': conversionFactor,
       'unitsPerPurchaseUnit': unitsPerPurchaseUnit,
+      'isActive': isActive ? 1 : 0,
     };
   }
 
@@ -107,6 +110,7 @@ class Product {
       saleUnit: map['saleUnit'] ?? map['unit'] ?? 'قطعة',
       conversionFactor: (map['conversionFactor'] ?? 1).toDouble(),
       unitsPerPurchaseUnit: (map['unitsPerPurchaseUnit'] as num?)?.toInt() ?? 1,
+      isActive: (map['isActive'] ?? 1) == 1,
     );
   }
 }

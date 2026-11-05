@@ -105,6 +105,7 @@ class _UsersScreenState extends State<UsersScreen> {
   Future<void> _deleteUser(User user) async {
     // Prevent deleting the currently logged-in user
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     final currentUserId = prefs.getInt('user_id');
 
     if (user.id == currentUserId) {
@@ -235,7 +236,11 @@ class _UsersScreenState extends State<UsersScreen> {
             color: AppStyles.primaryColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: const Icon(Icons.people, color: AppStyles.primaryColor, size: 28),
+          child: const Icon(
+            Icons.people,
+            color: AppStyles.primaryColor,
+            size: 28,
+          ),
         ),
         const SizedBox(width: 12),
         const Column(
@@ -323,14 +328,16 @@ class _UsersScreenState extends State<UsersScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 CircleAvatar(
-                  backgroundColor: AppStyles.primaryColor.withValues(alpha: 0.1),
-                  child: Icon(
-                    Icons.person,
-                    color: AppStyles.primaryColor,
+                  backgroundColor: AppStyles.primaryColor.withValues(
+                    alpha: 0.1,
                   ),
+                  child: Icon(Icons.person, color: AppStyles.primaryColor),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: user.role == UserRole.admin
                         ? Colors.purple.withValues(alpha: 0.1)
@@ -353,20 +360,14 @@ class _UsersScreenState extends State<UsersScreen> {
             const SizedBox(height: 4),
             Text(
               user.fullName,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
             Text(
               '@${user.username}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -433,7 +434,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
     super.initState();
     if (widget.user != null) {
       _usernameController.text = widget.user!.username;
-      _passwordController.text = widget.user!.password;
       _fullNameController.text = widget.user!.fullName;
       _selectedRole = widget.user!.role;
       _isActive = widget.user!.isActive;
@@ -503,11 +503,18 @@ class _AddUserDialogState extends State<AddUserDialog> {
                 TextFormField(
                   controller: _passwordController,
                   decoration: InputDecoration(
-                    labelText: 'كلمة السر',
+                    labelText: widget.user == null
+                        ? 'كلمة السر (12 حرفًا على الأقل)'
+                        : 'كلمة سر جديدة (اختياري)',
+                    helperText: widget.user == null
+                        ? null
+                        : 'اتركها فارغة للاحتفاظ بكلمة السر الحالية',
                     prefixIcon: const Icon(Icons.lock),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                       ),
                       onPressed: () {
                         setState(() {
@@ -518,11 +525,14 @@ class _AddUserDialogState extends State<AddUserDialog> {
                   ),
                   obscureText: _obscurePassword,
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    if (widget.user == null &&
+                        (value == null || value.isEmpty)) {
                       return 'يرجى إدخال كلمة السر';
                     }
-                    if (value.length < 6) {
-                      return 'كلمة السر يجب أن تكون 6 أحرف على الأقل';
+                    if (value != null &&
+                        value.isNotEmpty &&
+                        value.length < 12) {
+                      return 'كلمة السر يجب ألا تقل عن 12 حرفًا';
                     }
                     return null;
                   },
@@ -549,9 +559,18 @@ class _AddUserDialogState extends State<AddUserDialog> {
                     prefixIcon: Icon(Icons.work),
                   ),
                   items: const [
-                    DropdownMenuItem(value: UserRole.admin, child: Text('مدير النظام')),
-                    DropdownMenuItem(value: UserRole.supervisor, child: Text('مشرف')),
-                    DropdownMenuItem(value: UserRole.cashier, child: Text('كاشير')),
+                    DropdownMenuItem(
+                      value: UserRole.admin,
+                      child: Text('مدير النظام'),
+                    ),
+                    DropdownMenuItem(
+                      value: UserRole.supervisor,
+                      child: Text('مشرف'),
+                    ),
+                    DropdownMenuItem(
+                      value: UserRole.cashier,
+                      child: Text('كاشير'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value != null) {
@@ -685,7 +704,10 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   Future<void> _save() async {
     if (_formKey.currentState!.validate()) {
       final userRepository = UserRepository();
-      await userRepository.changePassword(widget.user.id!, _newPasswordController.text);
+      await userRepository.changePassword(
+        widget.user.id!,
+        _newPasswordController.text,
+      );
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -718,7 +740,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                     prefixIcon: const Icon(Icons.lock),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
+                        _obscureNewPassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                       ),
                       onPressed: () {
                         setState(() {
@@ -732,8 +756,8 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                     if (value == null || value.isEmpty) {
                       return 'يرجى إدخال كلمة السر الجديدة';
                     }
-                    if (value.length < 6) {
-                      return 'كلمة السر يجب أن تكون 6 أحرف على الأقل';
+                    if (value.length < 12) {
+                      return 'كلمة السر يجب ألا تقل عن 12 حرفًا';
                     }
                     return null;
                   },
@@ -746,7 +770,9 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                        _obscureConfirmPassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
                       ),
                       onPressed: () {
                         setState(() {

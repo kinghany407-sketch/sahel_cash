@@ -32,7 +32,17 @@ class CustomerRepository {
     return await _databaseHelper.deleteCustomer(id);
   }
 
-  Future<int> updateCustomerBalance(int customerId, double amount) async {
-    return await _databaseHelper.updateCustomerBalance(customerId, amount);
+  Future<int> updateCustomerBalance(
+    int customerId,
+    double amount, {
+    required String reason,
+    required String idempotencyKey,
+  }) async {
+    return await _databaseHelper.updateCustomerBalance(
+      customerId,
+      amount,
+      reason: reason,
+      idempotencyKey: idempotencyKey,
+    );
   }
 }

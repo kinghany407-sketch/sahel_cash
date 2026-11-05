@@ -19,6 +19,8 @@ import '../../repositories/product_repository.dart';
 import '../../repositories/customer_repository.dart';
 import '../../repositories/user_repository.dart';
 import '../../utils/quantity_formatter.dart';
+import '../../utils/cashier_sale_unit_labels.dart';
+import '../../utils/stock_quantity_converter.dart';
 import '../../widgets/cashier_product_search_card.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../invoices/thermal_receipt_dialog.dart';
@@ -44,11 +46,11 @@ class CartItem {
   });
 
   double get unitPrice {
-    double rawPrice = selectedSaleUnit.retailPrice;
-    final wholesalePrice = selectedSaleUnit.wholesalePrice;
-
-    if (isWholesale && wholesalePrice != null) {
-      rawPrice = wholesalePrice;
+    final rawPrice = isWholesale
+        ? selectedSaleUnit.wholesalePrice
+        : selectedSaleUnit.retailPrice;
+    if (rawPrice == null) {
+      throw StateError('The selected sale method has no configured price');
     }
 
     final saleUnit = selectedSaleUnit.saleUnit.trim().toLowerCase();
@@ -356,34 +358,20 @@ class _CashierScreenState extends State<CashierScreen> {
     );
   }
 
-  bool _isCompatibleWithStorageUnit(Product product, ProductSaleUnit unit) {
-    final storageUnit = product.storageUnit.trim().toLowerCase();
-    final saleUnit = unit.saleUnit.trim().toLowerCase();
+  bool _hasSalePrice(ProductSaleUnit unit) =>
+      unit.retailPrice != null || unit.wholesalePrice != null;
 
-    print(
-      'DEBUG: _isCompatibleWithStorageUnit - storageUnit: $storageUnit, saleUnit: $saleUnit',
-    );
+  bool _isWholesaleOnly(ProductSaleUnit unit) =>
+      unit.retailPrice == null && unit.wholesalePrice != null;
 
-    if (storageUnit.contains('كيلو') || storageUnit.contains('kg')) {
-      final result = saleUnit.contains('كيلو') || saleUnit.contains('kg');
-      print('DEBUG: _isCompatibleWithStorageUnit - Result (kg): $result');
-      return result;
-    }
-
-    if (storageUnit.contains('جرام') || storageUnit.contains('gram')) {
-      final result = saleUnit.contains('جرام') || saleUnit.contains('gram');
-      print('DEBUG: _isCompatibleWithStorageUnit - Result (gram): $result');
-      return result;
-    }
-
-    final result =
-        saleUnit.contains('قطعة') ||
-        saleUnit.contains('عمود') ||
-        saleUnit.contains('عامود') ||
-        saleUnit.contains('piece') ||
-        saleUnit.contains('column');
-    print('DEBUG: _isCompatibleWithStorageUnit - Result (piece): $result');
-    return result;
+  Future<List<ProductSaleUnit>> _getAvailableSaleUnits(
+    Product product,
+  ) async {
+    final saleUnits = await _repository.getSaleUnits(product.id ?? 0);
+    final pricedSaleUnits = saleUnits.where(_hasSalePrice).toList();
+    return pricedSaleUnits.isEmpty
+        ? [_buildFallbackSaleUnit(product)]
+        : pricedSaleUnits;
   }
 
   double _stockReductionInStorageUnit(
@@ -391,24 +379,12 @@ class _CashierScreenState extends State<CashierScreen> {
     ProductSaleUnit selectedUnit,
     double quantity,
   ) {
-    final storageUnit = product.storageUnit.trim().toLowerCase();
-    final saleUnit = selectedUnit.saleUnit.trim().toLowerCase();
-
-    if (saleUnit == storageUnit) {
-      return quantity;
-    }
-
-    if ((storageUnit.contains('كيلو') || storageUnit.contains('kg')) &&
-        (saleUnit.contains('جرام') || saleUnit.contains('gram'))) {
-      return quantity * 0.001;
-    }
-
-    if ((storageUnit.contains('جرام') || storageUnit.contains('gram')) &&
-        (saleUnit.contains('كيلو') || saleUnit.contains('kg'))) {
-      return quantity * 1000;
-    }
-
-    return quantity * selectedUnit.conversionToStorage;
+    return calculateStorageQuantity(
+      quantity: quantity,
+      saleUnit: selectedUnit.saleUnit,
+      storageUnit: product.storageUnit,
+      conversionToStorage: selectedUnit.conversionToStorage,
+    );
   }
 
   Future<void> _handleProductCardTap(Product product) async {
@@ -520,41 +496,24 @@ class _CashierScreenState extends State<CashierScreen> {
   }
 
   Future<void> _openProductSelectionDialog(Product product) async {
-    List<ProductSaleUnit> saleUnits = await _repository.getSaleUnits(
-      product.id ?? 0,
-    );
-    print(
-      'DEBUG: _openProductSelectionDialog - saleUnits.length from DB: ${saleUnits.length}',
-    );
-    print(
-      'DEBUG: _openProductSelectionDialog - saleUnits from DB: ${saleUnits.map((u) => u.saleUnit).toList()}',
-    );
-
-    print('DEBUG: saleUnits.length before filter: ${saleUnits.length}');
-    print('DEBUG: saleUnits: ${saleUnits.map((u) => u.saleUnit).toList()}');
-
-    saleUnits = saleUnits
-        .where((unit) => _isCompatibleWithStorageUnit(product, unit))
-        .toList();
-
-    print('DEBUG: saleUnits.length after filter: ${saleUnits.length}');
-    print(
-      'DEBUG: filtered saleUnits: ${saleUnits.map((u) => u.saleUnit).toList()}',
-    );
-
-    if (saleUnits.isEmpty) {
-      saleUnits = [_buildFallbackSaleUnit(product)];
+    late final List<ProductSaleUnit> saleUnits;
+    try {
+      saleUnits = await _getAvailableSaleUnits(product);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحميل وحدات البيع: $e')),
+        );
+      }
+      return;
     }
 
     if (!mounted) return;
 
     ProductSaleUnit selectedUnit = saleUnits.first;
-    bool isWholesale =
-        selectedUnit.saleUnit.contains('عمود') ||
-        selectedUnit.saleUnit.contains('عامود');
-    SellingMethod selectedMethod = selectedUnit.allowSellingByAmount
-        ? SellingMethod.quantity
-        : SellingMethod.quantity;
+    bool hasSelectedSaleUnit = true;
+    bool isWholesale = _isWholesaleOnly(selectedUnit);
+    SellingMethod selectedMethod = SellingMethod.quantity;
     final quantityController = TextEditingController(text: '1');
     final amountController = TextEditingController(text: '');
     final quantityFocusNode = FocusNode();
@@ -590,10 +549,14 @@ class _CashierScreenState extends State<CashierScreen> {
           height: 600,
           child: StatefulBuilder(
             builder: (context, setDialogState) {
-              final unitPrice =
-                  isWholesale && selectedUnit.wholesalePrice != null
-                  ? selectedUnit.wholesalePrice!
+              final unitPrice = isWholesale
+                  ? selectedUnit.wholesalePrice
                   : selectedUnit.retailPrice;
+              if (unitPrice == null) {
+                return const Center(
+                  child: Text('لا يوجد سعر مسجل لطريقة البيع المختارة'),
+                );
+              }
               final quantity = double.tryParse(quantityController.text) ?? 1;
               final amount = double.tryParse(amountController.text) ?? 0;
               final isKilogramUnit =
@@ -610,6 +573,13 @@ class _CashierScreenState extends State<CashierScreen> {
                   : 0.0;
 
               void addToCart() async {
+                if (!hasSelectedSaleUnit) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('اختر وحدة البيع أولاً')),
+                  );
+                  return;
+                }
+
                 final parsedQuantity = selectedMethod == SellingMethod.amount
                     ? SellingHelper.calculateQuantityFromAmount(
                         double.tryParse(amountController.text) ?? 0,
@@ -748,43 +718,6 @@ class _CashierScreenState extends State<CashierScreen> {
                                 ],
                               ),
                               const Divider(height: 24),
-                              if (saleUnits.length > 1)
-                                DropdownButtonFormField<ProductSaleUnit>(
-                                  value: selectedUnit,
-                                  decoration: const InputDecoration(
-                                    labelText: 'وحدة البيع',
-                                  ),
-                                  items: saleUnits.map((unit) {
-                                    return DropdownMenuItem<ProductSaleUnit>(
-                                      value: unit,
-                                      child: Text(unit.saleUnit),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setDialogState(() {
-                                        selectedUnit = value;
-                                        isWholesale =
-                                            value.saleUnit.contains('عمود') ||
-                                            value.saleUnit.contains('عامود');
-                                        if (!selectedUnit
-                                            .allowSellingByAmount) {
-                                          selectedMethod =
-                                              SellingMethod.quantity;
-                                        }
-                                      });
-                                    }
-                                  },
-                                )
-                              else
-                                Row(
-                                  textDirection: TextDirection.rtl,
-                                  children: [
-                                    const Text('وحدة البيع: '),
-                                    Text(selectedUnit.saleUnit),
-                                  ],
-                                ),
-                              const SizedBox(height: 12),
                               // عرض المخزون
                               Row(
                                 textDirection: TextDirection.rtl,
@@ -852,10 +785,8 @@ class _CashierScreenState extends State<CashierScreen> {
                                 runSpacing: 8,
                                 children: [
                                   const Text('نوع السعر:  '),
-                                  // Check if unit is "عمود" or "عامود"
-                                  if (selectedUnit.wholesalePrice != null &&
-                                      !selectedUnit.saleUnit.contains('عمود') &&
-                                      !selectedUnit.saleUnit.contains('عامود'))
+                                  if (selectedUnit.retailPrice != null &&
+                                      selectedUnit.wholesalePrice != null)
                                     ChoiceChip(
                                       label: const Text('قطاعي'),
                                       selected: !isWholesale,
@@ -871,7 +802,8 @@ class _CashierScreenState extends State<CashierScreen> {
                                         });
                                       },
                                     ),
-                                  if (selectedUnit.wholesalePrice != null)
+                                  if (selectedUnit.retailPrice != null &&
+                                      selectedUnit.wholesalePrice != null)
                                     ChoiceChip(
                                       label: const Text('جملة'),
                                       selected: isWholesale,
@@ -884,8 +816,12 @@ class _CashierScreenState extends State<CashierScreen> {
                                         });
                                       },
                                     ),
-                                  if (selectedUnit.wholesalePrice == null)
+                                  if (selectedUnit.retailPrice != null &&
+                                      selectedUnit.wholesalePrice == null)
                                     const Text('قطاعي'),
+                                  if (selectedUnit.retailPrice == null &&
+                                      selectedUnit.wholesalePrice != null)
+                                    const Text('جملة'),
                                 ],
                               ),
                               const SizedBox(height: 12),
@@ -910,7 +846,9 @@ class _CashierScreenState extends State<CashierScreen> {
                                   ),
                                   textAlign: TextAlign.center,
                                   decoration: InputDecoration(
-                                    labelText: 'الكمية',
+                                    labelText: CashierSaleUnitLabels.quantity(
+                                      selectedUnit.saleUnit,
+                                    ),
                                     labelStyle: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
@@ -962,9 +900,9 @@ class _CashierScreenState extends State<CashierScreen> {
                               Text(
                                 'وحدة البيع: ${selectedUnit.saleUnit}\n'
                                 'نوع السعر: ${isWholesale ? 'جملة' : 'قطاعي'}\n'
-                                'سعر الكيلو: ${unitPrice.toStringAsFixed(2)}\n'
+                                '${CashierSaleUnitLabels.price(selectedUnit.saleUnit)}: ${unitPrice.toStringAsFixed(2)}\n'
                                 '${selectedMethod == SellingMethod.amount ? 'المبلغ: ${formatQuantity(amount)}\n' : ''}'
-                                'الكمية بالكيلو: ${formatQuantity(displayQuantity)}${isKilogramUnit ? ' كيلو' : ''}\n'
+                                '${CashierSaleUnitLabels.quantity(selectedUnit.saleUnit)}: ${formatQuantity(displayQuantity)}\n'
                                 '${isKilogramUnit ? 'ما يعادلها بالجرام: ${displayGrams.round()} جرام\n' : ''}'
                                 'الإجمالي: ${displayTotal.toStringAsFixed(2)}',
                                 style: const TextStyle(fontSize: 14),
@@ -984,7 +922,9 @@ class _CashierScreenState extends State<CashierScreen> {
                             ),
                             const SizedBox(width: 8),
                             ElevatedButton(
-                              onPressed: addToCart,
+                              onPressed: hasSelectedSaleUnit
+                                  ? addToCart
+                                  : null,
                               child: const Text('إضافة'),
                             ),
                           ],
@@ -1131,8 +1071,8 @@ class _CashierScreenState extends State<CashierScreen> {
     final pickerController = TextEditingController();
     List<Product> pickerResults = [];
     Product? selectedProduct;
-    List<ProductSaleUnit> availableSaleUnits = [];
     ProductSaleUnit? selectedUnit;
+    bool hasSelectedSaleUnit = false;
     bool isWholesale = false;
     final quantityController = TextEditingController(text: '1');
     final amountController = TextEditingController(text: '');
@@ -1170,23 +1110,34 @@ class _CashierScreenState extends State<CashierScreen> {
           height: 600,
           child: StatefulBuilder(
             builder: (context, setDialogState) {
-              final unitPrice =
-                  isWholesale && selectedUnit?.wholesalePrice != null
-                  ? selectedUnit!.wholesalePrice!
-                  : selectedUnit?.retailPrice ?? 0;
+              final unitPrice = selectedUnit == null
+                  ? null
+                  : isWholesale
+                  ? selectedUnit!.wholesalePrice
+                  : selectedUnit!.retailPrice;
+              if (selectedUnit != null && unitPrice == null) {
+                return const Center(
+                  child: Text('لا يوجد سعر مسجل لطريقة البيع المختارة'),
+                );
+              }
               final quantity = double.tryParse(quantityController.text) ?? 1;
               final amount = double.tryParse(amountController.text) ?? 0;
               final isKilogramUnit =
-                  selectedUnit?.saleUnit.trim().toLowerCase().contains(
+                  selectedUnit != null &&
+                  (selectedUnit!.saleUnit.trim().toLowerCase().contains(
                         'كيلو',
-                      ) ==
-                      true ||
-                  selectedUnit?.saleUnit.trim().toLowerCase().contains('kg') ==
-                      true;
-              final displayTotal = selectedMethod == SellingMethod.amount
+                      ) ||
+                      selectedUnit!.saleUnit.trim().toLowerCase().contains(
+                        'kg',
+                      ));
+              final displayTotal = unitPrice == null
+                  ? 0.0
+                  : selectedMethod == SellingMethod.amount
                   ? amount
                   : quantity * unitPrice;
-              final displayQuantity = selectedMethod == SellingMethod.amount
+              final displayQuantity = unitPrice == null
+                  ? 0.0
+                  : selectedMethod == SellingMethod.amount
                   ? amount / unitPrice
                   : quantity;
               final displayGrams = isKilogramUnit
@@ -1194,6 +1145,25 @@ class _CashierScreenState extends State<CashierScreen> {
                   : 0.0;
 
               void addToCart() async {
+                if (selectedProduct == null || selectedUnit == null) return;
+                if (!hasSelectedSaleUnit) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('اختر وحدة البيع أولاً')),
+                  );
+                  return;
+                }
+                final unitPrice = isWholesale
+                    ? selectedUnit!.wholesalePrice
+                    : selectedUnit!.retailPrice;
+                if (unitPrice == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('لا يوجد سعر مسجل لطريقة البيع المختارة'),
+                    ),
+                  );
+                  return;
+                }
+
                 final parsedQuantity = selectedMethod == SellingMethod.amount
                     ? SellingHelper.calculateQuantityFromAmount(
                         double.tryParse(amountController.text) ?? 0,
@@ -1374,54 +1344,45 @@ class _CashierScreenState extends State<CashierScreen> {
                                                     '${product.sellPrice.toStringAsFixed(2)} ${product.saleUnit}',
                                                   ),
                                                   onTap: () async {
-                                                    List<ProductSaleUnit>
-                                                    saleUnits =
-                                                        await _repository
-                                                            .getSaleUnits(
-                                                              product.id ?? 0,
-                                                            );
-                                                    print(
-                                                      'DEBUG: saleUnits.length before filter: ${saleUnits.length}',
-                                                    );
-                                                    print(
-                                                      'DEBUG: saleUnits before filter: ${saleUnits.map((u) => u.saleUnit).toList()}',
-                                                    );
-
-                                                    saleUnits = saleUnits
-                                                        .where(
-                                                          (unit) =>
-                                                              _isCompatibleWithStorageUnit(
-                                                                product,
-                                                                unit,
-                                                              ),
-                                                        )
-                                                        .toList();
-
-                                                    print(
-                                                      'DEBUG: saleUnits.length after filter: ${saleUnits.length}',
-                                                    );
-                                                    print(
-                                                      'DEBUG: saleUnits after filter: ${saleUnits.map((u) => u.saleUnit).toList()}',
-                                                    );
-
-                                                    if (saleUnits.isEmpty) {
-                                                      saleUnits = [
-                                                        _buildFallbackSaleUnit(
-                                                          product,
+                                                    late final List<
+                                                      ProductSaleUnit
+                                                    >
+                                                    saleUnits;
+                                                    try {
+                                                      saleUnits =
+                                                          await _getAvailableSaleUnits(
+                                                            product,
+                                                          );
+                                                    } catch (e) {
+                                                      if (!context.mounted) {
+                                                        return;
+                                                      }
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            'تعذر تحميل وحدات البيع: $e',
+                                                          ),
                                                         ),
-                                                      ];
+                                                      );
+                                                      return;
                                                     }
                                                     if (!mounted) return;
                                                     setDialogState(() {
                                                       selectedProduct = product;
-                                                      availableSaleUnits =
-                                                          saleUnits;
                                                       selectedUnit =
                                                           saleUnits.first;
-                                                      isWholesale = false;
+                                                      hasSelectedSaleUnit =
+                                                          true;
+                                                      isWholesale =
+                                                          _isWholesaleOnly(
+                                                            selectedUnit!,
+                                                          );
                                                       selectedMethod =
-                                                          selectedUnit!
-                                                              .allowSellingByAmount
+                                                          !isWholesale &&
+                                                              selectedUnit!
+                                                                  .allowSellingByAmount
                                                           ? SellingMethod.amount
                                                           : SellingMethod
                                                                 .quantity;
@@ -1562,41 +1523,6 @@ class _CashierScreenState extends State<CashierScreen> {
                                       ],
                                     ),
                                     const SizedBox(height: 12),
-                                    // وحدة البيع
-                                    DropdownButtonFormField<ProductSaleUnit>(
-                                      value: selectedUnit,
-                                      decoration: const InputDecoration(
-                                        labelText: 'وحدة البيع',
-                                      ),
-                                      items: availableSaleUnits.map((unit) {
-                                        return DropdownMenuItem<
-                                          ProductSaleUnit
-                                        >(
-                                          value: unit,
-                                          child: Text(unit.saleUnit),
-                                        );
-                                      }).toList(),
-                                      onChanged: (value) {
-                                        if (value != null) {
-                                          setDialogState(() {
-                                            selectedUnit = value;
-                                            isWholesale =
-                                                value.saleUnit.contains(
-                                                  'عمود',
-                                                ) ||
-                                                value.saleUnit.contains(
-                                                  'عامود',
-                                                );
-                                            if (!selectedUnit!
-                                                .allowSellingByAmount) {
-                                              selectedMethod =
-                                                  SellingMethod.quantity;
-                                            }
-                                          });
-                                        }
-                                      },
-                                    ),
-                                    const SizedBox(height: 12),
                                     // نوع السعر
                                     Wrap(
                                       textDirection: TextDirection.rtl,
@@ -1606,15 +1532,10 @@ class _CashierScreenState extends State<CashierScreen> {
                                       runSpacing: 8,
                                       children: [
                                         const Text('نوع السعر:  '),
-                                        // Check if unit is "عمود" or "عامود"
-                                        if (selectedUnit!.wholesalePrice !=
+                                        if (selectedUnit!.retailPrice !=
                                                 null &&
-                                            !selectedUnit!.saleUnit.contains(
-                                              'عمود',
-                                            ) &&
-                                            !selectedUnit!.saleUnit.contains(
-                                              'عامود',
-                                            ))
+                                            selectedUnit!.wholesalePrice !=
+                                                null)
                                           ChoiceChip(
                                             label: const Text('قطاعي'),
                                             selected: !isWholesale,
@@ -1631,8 +1552,10 @@ class _CashierScreenState extends State<CashierScreen> {
                                               });
                                             },
                                           ),
-                                        if (selectedUnit!.wholesalePrice !=
-                                            null)
+                                        if (selectedUnit!.retailPrice !=
+                                                null &&
+                                            selectedUnit!.wholesalePrice !=
+                                                null)
                                           ChoiceChip(
                                             label: const Text('جملة'),
                                             selected: isWholesale,
@@ -1645,9 +1568,16 @@ class _CashierScreenState extends State<CashierScreen> {
                                               });
                                             },
                                           ),
-                                        if (selectedUnit!.wholesalePrice ==
-                                            null)
+                                        if (selectedUnit!.retailPrice !=
+                                                null &&
+                                            selectedUnit!.wholesalePrice ==
+                                                null)
                                           const Text('قطاعي'),
+                                        if (selectedUnit!.retailPrice ==
+                                                null &&
+                                            selectedUnit!.wholesalePrice !=
+                                                null)
+                                          const Text('جملة'),
                                       ],
                                     ),
                                     const SizedBox(height: 12),
@@ -1675,7 +1605,9 @@ class _CashierScreenState extends State<CashierScreen> {
                                         ),
                                         textAlign: TextAlign.center,
                                         decoration: InputDecoration(
-                                          labelText: 'الكمية',
+                                          labelText: CashierSaleUnitLabels.quantity(
+                                            selectedUnit!.saleUnit,
+                                          ),
                                           labelStyle: const TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
@@ -1736,9 +1668,9 @@ class _CashierScreenState extends State<CashierScreen> {
                                     Text(
                                       'وحدة البيع: ${selectedUnit!.saleUnit}\n'
                                       'نوع السعر: ${isWholesale ? 'جملة' : 'قطاعي'}\n'
-                                      'سعر الكيلو: ${unitPrice.toStringAsFixed(2)}\n'
+                                      '${CashierSaleUnitLabels.price(selectedUnit!.saleUnit)}: ${unitPrice?.toStringAsFixed(2) ?? 'لا يوجد سعر مسجل'}\n'
                                       '${selectedMethod == SellingMethod.amount ? 'المبلغ: ${formatQuantity(amount)}\n' : ''}'
-                                      'الكمية بالكيلو: ${formatQuantity(displayQuantity)}${isKilogramUnit ? ' كيلو' : ''}\n'
+                                      '${CashierSaleUnitLabels.quantity(selectedUnit!.saleUnit)}: ${formatQuantity(displayQuantity)}\n'
                                       '${isKilogramUnit ? 'ما يعادلها بالجرام: ${displayGrams.round()} جرام\n' : ''}'
                                       'الإجمالي: ${displayTotal.toStringAsFixed(2)}',
                                       style: const TextStyle(fontSize: 14),
@@ -1757,7 +1689,9 @@ class _CashierScreenState extends State<CashierScreen> {
                               child: const Text('إلغاء'),
                             ),
                             const SizedBox(width: 8),
-                            if (selectedProduct != null && selectedUnit != null)
+                            if (selectedProduct != null &&
+                                selectedUnit != null &&
+                                hasSelectedSaleUnit)
                               ElevatedButton(
                                 onPressed: addToCart,
                                 child: const Text('إضافة'),
@@ -2492,6 +2426,7 @@ class _CashierScreenState extends State<CashierScreen> {
             unitPrice: item.unitPrice,
             total: item.total,
             isWholesale: item.isWholesale,
+            conversionToStorage: item.selectedSaleUnit.conversionToStorage,
           ),
         )
         .toList();

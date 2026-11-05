@@ -15,6 +15,7 @@ import 'descriptions_manager.dart';
 import 'descriptions_manager_dialog.dart';
 import 'units_manager.dart';
 import 'units_manager_dialog.dart';
+import '../../utils/unit_name_normalizer.dart';
 
 class AddProductDialog extends StatefulWidget {
   final Product? product;
@@ -43,6 +44,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   final buyPriceController = TextEditingController();
   final sellPriceController = TextEditingController();
   final quantityController = TextEditingController();
+  final inventoryChangeReasonController = TextEditingController();
   final minQuantityController = TextEditingController();
   final conversionFactorController = TextEditingController();
   final unitsPerPurchaseUnitController = TextEditingController();
@@ -62,6 +64,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   String? _selectedSaleUnit;
   String? _selectedDescription;
   bool _isSaving = false;
+  bool _unitsLoaded = false;
   File? _selectedImageFile;
 
   final List<ProductSaleUnit> _saleUnits = [];
@@ -75,6 +78,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
     _unitsManager = UnitsManager();
     _categoriesManager = CategoriesManager();
     _descriptionsManager = DescriptionsManager();
+    _loadUnits();
 
     final product = widget.product;
     if (product != null) {
@@ -95,9 +99,6 @@ class _AddProductDialogState extends State<AddProductDialog> {
       _selectedDescription = product.description.isEmpty
           ? null
           : product.description;
-      _unitsManager.addUnit(product.storageUnit);
-      _unitsManager.addUnit(product.purchaseUnit);
-      _unitsManager.addUnit(product.saleUnit);
       _selectedStorageUnit = product.storageUnit.isEmpty
           ? 'قطعة'
           : product.storageUnit;
@@ -133,6 +134,22 @@ class _AddProductDialogState extends State<AddProductDialog> {
     _loadConversionFactor();
   }
 
+  Future<void> _loadUnits() async {
+    try {
+      await _unitsManager.loadUnits();
+      if (!mounted) return;
+      setState(() {
+        _unitsLoaded = true;
+        _syncSelectedValues();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تعذر تحميل الوحدات: $e')));
+    }
+  }
+
   @override
   void dispose() {
     nameController.dispose();
@@ -143,6 +160,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
     buyPriceController.dispose();
     sellPriceController.dispose();
     quantityController.dispose();
+    inventoryChangeReasonController.dispose();
     minQuantityController.dispose();
     conversionFactorController.dispose();
     unitsPerPurchaseUnitController.dispose();
@@ -227,22 +245,27 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 
   void _addSaleUnit() {
+    if (_isViewOnly) return;
     // Show dialog to add a new sale unit
     _showSaleUnitDialog();
   }
 
   void _editSaleUnit(ProductSaleUnit saleUnit) {
+    if (_isViewOnly) return;
     // Show dialog to edit the sale unit
     _showSaleUnitDialog(saleUnit: saleUnit);
   }
 
   void _deleteSaleUnit(ProductSaleUnit saleUnit) {
+    if (_isViewOnly) return;
     setState(() {
       _saleUnits.remove(saleUnit);
     });
   }
 
   void _showSaleUnitDialog({ProductSaleUnit? saleUnit}) {
+    if (_isViewOnly) return;
+    ProductSaleUnit? editingSaleUnit = saleUnit;
     final unitController = TextEditingController(
       text: saleUnit?.saleUnit ?? '',
     );
@@ -262,7 +285,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(saleUnit == null ? 'إضافة وحدة بيع' : 'تعديل وحدة بيع'),
+          title: Text(
+            editingSaleUnit == null ? 'إضافة وحدة بيع' : 'تعديل وحدة بيع',
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -284,9 +309,42 @@ class _AddProductDialogState extends State<AddProductDialog> {
                   onChanged: (value) {
                     setDialogState(() {
                       unitController.text = value ?? '';
+                      ProductSaleUnit? selectedExistingUnit;
+                      for (final existingUnit in _saleUnits) {
+                        if (UnitNameNormalizer.normalize(
+                              existingUnit.saleUnit,
+                            ) ==
+                            UnitNameNormalizer.normalize(value ?? '')) {
+                          selectedExistingUnit = existingUnit;
+                          break;
+                        }
+                      }
+
+                      editingSaleUnit = selectedExistingUnit;
+                      retailPriceController.text =
+                          selectedExistingUnit?.retailPrice?.toString() ?? '';
+                      wholesalePriceController.text =
+                          selectedExistingUnit?.wholesalePrice?.toString() ??
+                          '';
+                      conversionController.text =
+                          selectedExistingUnit?.conversionToStorage
+                              .toString() ??
+                          '1';
+                      allowSellingByAmount =
+                          selectedExistingUnit?.allowSellingByAmount ?? false;
                     });
                   },
                 ),
+                if (editingSaleUnit != null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        'هذه الوحدة مسجلة بالفعل. سيتم تعديلها فقط بعد تأكيد الحفظ.',
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: retailPriceController,
@@ -342,11 +400,46 @@ class _AddProductDialogState extends State<AddProductDialog> {
                   return;
                 }
 
-                final retailPrice = double.tryParse(retailPriceController.text);
-                if (retailPrice == null || retailPrice <= 0) {
+                final retailText = retailPriceController.text.trim();
+                final wholesaleText = wholesalePriceController.text.trim();
+                final retailPrice = retailText.isEmpty
+                    ? null
+                    : double.tryParse(retailText);
+                final wholesalePrice = wholesaleText.isEmpty
+                    ? null
+                    : double.tryParse(wholesaleText);
+
+                if (retailText.isEmpty && wholesaleText.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('أدخل سعرًا قطاعيًا أو سعر جملة على الأقل'),
+                    ),
+                  );
+                  return;
+                }
+
+                if (retailText.isNotEmpty &&
+                    (retailPrice == null || retailPrice <= 0)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('الرجاء إدخال سعر قطاعي صحيح'),
+                    ),
+                  );
+                  return;
+                }
+
+                if (wholesaleText.isNotEmpty &&
+                    (wholesalePrice == null || wholesalePrice <= 0)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('الرجاء إدخال سعر جملة صحيح')),
+                  );
+                  return;
+                }
+
+                if (retailPrice == null && wholesalePrice == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('أدخل سعرًا قطاعيًا أو سعر جملة على الأقل'),
                     ),
                   );
                   return;
@@ -362,33 +455,39 @@ class _AddProductDialogState extends State<AddProductDialog> {
                   return;
                 }
 
-                // Check for duplicate unit
-                if (_saleUnits.any(
-                  (u) => u.saleUnit == unit && u.id != saleUnit?.id,
-                )) {
+                final normalizedUnit = UnitNameNormalizer.normalize(unit);
+                final duplicateExists = _saleUnits.any(
+                  (existingUnit) =>
+                      UnitNameNormalizer.normalize(existingUnit.saleUnit) ==
+                          normalizedUnit &&
+                      !identical(existingUnit, editingSaleUnit),
+                );
+                if (duplicateExists) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('هذه الوحدة موجودة بالفعل')),
+                    const SnackBar(
+                      content: Text(
+                        'هذه الوحدة مسجلة بالفعل لهذا الصنف. اخترها لتعديل بياناتها بدل إضافة نسخة ثانية.',
+                      ),
+                    ),
                   );
                   return;
                 }
 
                 final newSaleUnit = ProductSaleUnit(
-                  id: saleUnit?.id,
+                  id: editingSaleUnit?.id,
                   productId: widget.product?.id ?? 0,
                   saleUnit: unit,
                   retailPrice: retailPrice,
-                  wholesalePrice: wholesalePriceController.text.trim().isEmpty
-                      ? null
-                      : double.tryParse(wholesalePriceController.text),
+                  wholesalePrice: wholesalePrice,
                   conversionToStorage: conversion,
                   allowSellingByAmount: allowSellingByAmount,
                 );
 
                 setState(() {
-                  if (saleUnit == null) {
+                  if (editingSaleUnit == null) {
                     _saleUnits.add(newSaleUnit);
                   } else {
-                    final index = _saleUnits.indexOf(saleUnit);
+                    final index = _saleUnits.indexOf(editingSaleUnit!);
                     if (index != -1) {
                       _saleUnits[index] = newSaleUnit;
                     }
@@ -406,6 +505,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 
   Future<void> _pickImage() async {
+    if (_isViewOnly) return;
     try {
       final XFile? image = await _imagePicker.pickImage(
         source: ImageSource.gallery,
@@ -432,6 +532,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 
   void _clearImage() {
+    if (_isViewOnly) return;
     setState(() {
       _selectedImageFile = null;
       imageController.clear();
@@ -488,7 +589,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
   }
 
   Future<void> _saveProduct() async {
-    if (_isSaving) return;
+    if (_isSaving || _isViewOnly || !_unitsLoaded) return;
     setState(() => _isSaving = true);
 
     try {
@@ -519,7 +620,10 @@ class _AddProductDialogState extends State<AddProductDialog> {
 
       // Save product
       if (widget.product != null) {
-        await _productRepository.updateProduct(product);
+        await _productRepository.updateProduct(
+          product,
+          inventoryChangeReason: inventoryChangeReasonController.text,
+        );
         // Delete all existing sale units and re-add them
         await _productRepository.deleteSaleUnitsByProductId(product.id!);
       } else {
@@ -541,6 +645,15 @@ class _AddProductDialogState extends State<AddProductDialog> {
 
       if (mounted) {
         Navigator.pop(context, product);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تعذر حفظ الصنف أو حركة المخزون: $error'),
+            backgroundColor: AppStyles.errorColor,
+          ),
+        );
       }
     } finally {
       if (mounted) {
@@ -662,6 +775,18 @@ class _AddProductDialogState extends State<AddProductDialog> {
                       validator: (value) =>
                           _validateNonNegativeNumber(value, 'الكمية'),
                     ),
+                    if (_isEditing && !_isViewOnly) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: inventoryChangeReasonController,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'سبب تغيير الكمية',
+                          hintText: 'مطلوب عند تعديل الكمية الحالية',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
                     buildDropdown(
                       label: 'وحدة البيع',
                       value: _selectedSaleUnit,
@@ -827,8 +952,9 @@ class _AddProductDialogState extends State<AddProductDialog> {
                                 keyboard: TextInputType.number,
                                 helperText: 'مثال: 1 عمود = 100 قطعة',
                                 readOnly:
+                                    _isViewOnly ||
                                     _selectedPurchaseUnit ==
-                                    _selectedStorageUnit,
+                                        _selectedStorageUnit,
                                 onChanged: (_) =>
                                     setState(_loadConversionFactor),
                                 validator: _validateUnitsPerPurchaseUnit,
@@ -924,7 +1050,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
                         children: [
                           const Icon(Icons.sell),
                           const SizedBox(width: AppStyles.spacingSm),
-                          const Text('وحدات البيع والأسعار'),
+                          const Expanded(child: Text('وحدات البيع والأسعار')),
                         ],
                       ),
                       initiallyExpanded: false,
@@ -990,35 +1116,51 @@ class _AddProductDialogState extends State<AddProductDialog> {
                               child: ListTile(
                                 title: Text(saleUnit.saleUnit),
                                 subtitle: Text(
-                                  'قطاعي: ${saleUnit.retailPrice.toStringAsFixed(2)}${saleUnit.wholesalePrice != null ? ' | جملة: ${saleUnit.wholesalePrice!.toStringAsFixed(2)}' : ''}',
+                                  [
+                                    if (saleUnit.retailPrice != null)
+                                      'قطاعي: ${saleUnit.retailPrice!.toStringAsFixed(2)}',
+                                    if (saleUnit.wholesalePrice != null)
+                                      'جملة: ${saleUnit.wholesalePrice!.toStringAsFixed(2)}',
+                                  ].join(' | '),
                                 ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, size: 20),
-                                      onPressed: () => _editSaleUnit(saleUnit),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, size: 20),
-                                      onPressed: () =>
-                                          _deleteSaleUnit(saleUnit),
-                                    ),
-                                  ],
-                                ),
+                                trailing: _isViewOnly
+                                    ? null
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.edit,
+                                              size: 20,
+                                            ),
+                                            onPressed: () =>
+                                                _editSaleUnit(saleUnit),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.delete,
+                                              size: 20,
+                                            ),
+                                            onPressed: () =>
+                                                _deleteSaleUnit(saleUnit),
+                                          ),
+                                        ],
+                                      ),
                               ),
                             );
                           }),
-                        const SizedBox(height: AppStyles.spacingSm),
-                        ElevatedButton.icon(
-                          onPressed: _addSaleUnit,
-                          icon: const Icon(Icons.add),
-                          label: const Text('إضافة وحدة بيع'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppStyles.primaryColor,
-                            foregroundColor: Colors.white,
+                        if (!_isViewOnly) ...[
+                          const SizedBox(height: AppStyles.spacingSm),
+                          ElevatedButton.icon(
+                            onPressed: _addSaleUnit,
+                            icon: const Icon(Icons.add),
+                            label: const Text('إضافة وحدة بيع'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppStyles.primaryColor,
+                              foregroundColor: Colors.white,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ],
@@ -1037,7 +1179,7 @@ class _AddProductDialogState extends State<AddProductDialog> {
             ),
             if (!_isViewOnly)
               ElevatedButton.icon(
-                onPressed: _isSaving ? null : _saveProduct,
+                onPressed: _isSaving || !_unitsLoaded ? null : _saveProduct,
                 icon: const Icon(Icons.save),
                 label: const Text('حفظ'),
                 style: ElevatedButton.styleFrom(
@@ -1103,21 +1245,22 @@ class _AddProductDialogState extends State<AddProductDialog> {
                     ),
                   ),
                 ),
-                Positioned(
-                  top: AppStyles.spacingSm,
-                  right: AppStyles.spacingSm,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(AppStyles.radiusMd),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: _clearImage,
-                      tooltip: 'حذف الصورة',
+                if (!_isViewOnly)
+                  Positioned(
+                    top: AppStyles.spacingSm,
+                    right: AppStyles.spacingSm,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(AppStyles.radiusMd),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: _clearImage,
+                        tooltip: 'حذف الصورة',
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           )
@@ -1151,12 +1294,15 @@ class _AddProductDialogState extends State<AddProductDialog> {
             ),
           ),
         const SizedBox(height: AppStyles.spacingMd),
-        TextButton.icon(
-          onPressed: _pickImage,
-          icon: const Icon(Icons.camera_alt_outlined),
-          label: const Text('اختر صورة'),
-          style: TextButton.styleFrom(foregroundColor: AppStyles.primaryColor),
-        ),
+        if (!_isViewOnly)
+          TextButton.icon(
+            onPressed: _pickImage,
+            icon: const Icon(Icons.camera_alt_outlined),
+            label: const Text('اختر صورة'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppStyles.primaryColor,
+            ),
+          ),
       ],
     );
   }
@@ -1253,10 +1399,10 @@ class _AddProductDialogState extends State<AddProductDialog> {
                   child: Text(item, textDirection: TextDirection.rtl),
                 );
               }).toList(),
-              onChanged: _isViewOnly ? null : onChanged,
+              onChanged: _isViewOnly || !_unitsLoaded ? null : onChanged,
             ),
           ),
-          if (onManagePressed != null && !_isViewOnly) ...[
+          if (onManagePressed != null && !_isViewOnly && _unitsLoaded) ...[
             const SizedBox(width: AppStyles.spacingSm),
             IconButton(
               tooltip: 'إدارة $label',

@@ -1,68 +1,49 @@
+import '../../database/database_helper.dart';
+import '../../utils/unit_name_normalizer.dart';
 import 'conversion_manager.dart';
 
 class UnitsManager {
-  UnitsManager._() {
-    if (_units.isEmpty) {
-      _units.addAll(defaultUnits);
-    }
-  }
+  UnitsManager._()
+    : _units = List<String>.from(UnitNameNormalizer.defaultUnits);
 
   static final UnitsManager instance = UnitsManager._();
 
   factory UnitsManager() => instance;
 
-  static final List<String> _units = <String>[];
-
-  static const List<String> defaultUnits = <String>[
-    'قطعة',
-    'كرتونة',
-    'دستة',
-    'رزمة',
-    'باكو',
-    'كيلو',
-    'جرام',
-    'طن',
-    'رول',
-    'شوال',
-    'متر',
-    'متر مربع',
-    'متر مكعب',
-    'صندوق',
-    'بالة',
-    'عبوة',
-    'زجاجة',
-    'كيس',
-  ];
+  final List<String> _units;
+  bool _isLoaded = false;
 
   List<String> get availableUnits => List.unmodifiable(_units);
+  bool get isLoaded => _isLoaded;
 
-  void addUnit(String unit) {
-    final normalized = unit.trim();
-    if (normalized.isEmpty) return;
-    if (!_units.contains(normalized)) {
-      _units.add(normalized);
-    }
+  Future<void> loadUnits() async {
+    final units = await DatabaseHelper.instance.getUnits();
+    _units
+      ..clear()
+      ..addAll(units);
+    _isLoaded = true;
   }
 
-  void updateUnit(String oldUnit, String newUnit) {
-    final normalizedOld = oldUnit.trim();
-    final normalizedNew = newUnit.trim();
-    if (normalizedOld.isEmpty || normalizedNew.isEmpty) return;
-
-    final index = _units.indexOf(normalizedOld);
-    if (index == -1) return;
-
-    _units[index] = normalizedNew;
-    ConversionManager.instance.renameUnit(normalizedOld, normalizedNew);
+  Future<void> addUnit(String unit) async {
+    await DatabaseHelper.instance.insertUnit(unit);
+    await loadUnits();
   }
 
-  void deleteUnit(String unit) {
-    final normalized = unit.trim();
-    if (normalized.isEmpty) return;
-
-    _units.remove(normalized);
-    ConversionManager.instance.deleteUnit(normalized);
+  Future<void> updateUnit(String oldUnit, String newUnit) async {
+    await DatabaseHelper.instance.renameUnit(oldUnit, newUnit);
+    ConversionManager.instance.renameUnit(oldUnit, newUnit);
+    await loadUnits();
   }
 
-  bool contains(String unit) => _units.contains(unit);
+  Future<void> deleteUnit(String unit) async {
+    await DatabaseHelper.instance.deleteUnit(unit);
+    ConversionManager.instance.deleteUnit(unit);
+    await loadUnits();
+  }
+
+  bool contains(String unit) => _units.any(
+    (existing) =>
+        UnitNameNormalizer.normalize(existing) ==
+        UnitNameNormalizer.normalize(unit),
+  );
 }

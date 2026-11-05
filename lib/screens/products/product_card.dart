@@ -17,6 +17,7 @@ class ProductCard extends StatelessWidget {
   final String storageUnit;
   final String saleUnit;
   final bool isLowStock;
+  final bool isActive;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final bool showPurchasePrice;
@@ -36,6 +37,7 @@ class ProductCard extends StatelessWidget {
     required this.storageUnit,
     required this.saleUnit,
     required this.isLowStock,
+    this.isActive = true,
     this.onEdit,
     this.onDelete,
     this.showPurchasePrice = true,
@@ -51,7 +53,7 @@ class ProductCard extends StatelessWidget {
     final minQuantityText = minQuantity == minQuantity.toInt()
         ? minQuantity.toInt().toString()
         : minQuantity.toStringAsFixed(2);
-    
+
     // Stock status
     String stockStatus;
     String stockIcon;
@@ -94,209 +96,225 @@ class ProductCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     textDirection: TextDirection.rtl,
                     children: [
-                    // Product name with warning icon
-                    Row(
-                      textDirection: TextDirection.rtl,
-                      children: [
-                        if (isLowStock)
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: AppStyles.errorColor,
-                            size: 16,
-                          ),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.black87,
+                      // Product name with warning icon
+                      Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          if (isLowStock)
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              color: AppStyles.errorColor,
+                              size: 16,
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    // Brand, SKU, Barcode in compact row
-                    Row(
-                      textDirection: TextDirection.rtl,
-                      children: [
-                        if (brand.isNotEmpty) ...[
-                          Flexible(
+                          const SizedBox(width: 5),
+                          Expanded(
                             child: Text(
-                              brand,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w500,
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Colors.black87,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
                         ],
-                        Flexible(
-                          child: Text(
-                            'SKU: $sku',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade700,
+                      ),
+                      const SizedBox(height: 2),
+                      // Brand, SKU, Barcode in compact row
+                      Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          if (brand.isNotEmpty) ...[
+                            Flexible(
+                              child: Text(
+                                brand,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        if (barcode.isNotEmpty) ...[
-                          const SizedBox(width: 8),
+                            const SizedBox(width: 8),
+                          ],
                           Flexible(
                             child: Text(
-                              'باركود: $barcode',
+                              'SKU: $sku',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.grey.shade700,
                               ),
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    // Prices and quantity in compact row
-                    Row(
-                      textDirection: TextDirection.rtl,
-                      children: [
-                        if (showPurchasePrice)
-                          Flexible(
-                            child: Text(
-                              'شراء: ${purchasePrice.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade700,
+                          if (barcode.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'باركود: $barcode',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade700,
+                                ),
                               ),
                             ),
-                          ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            'بيع: ${salePrice.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: AppStyles.primaryColor,
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      // Prices and quantity in compact row
+                      Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          if (showPurchasePrice)
+                            Flexible(
+                              child: Text(
+                                'شراء: ${purchasePrice.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        if (showProfit) ...[
                           const SizedBox(width: 10),
                           Flexible(
                             child: Text(
-                              'ربح: ${profit.toStringAsFixed(2)}',
-                              style: const TextStyle(
-                                color: AppStyles.successColor,
-                                fontWeight: FontWeight.bold,
+                              'بيع: ${salePrice.toStringAsFixed(2)}',
+                              style: TextStyle(
                                 fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: AppStyles.primaryColor,
+                              ),
+                            ),
+                          ),
+                          if (showProfit) ...[
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'ربح: ${profit.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  color: AppStyles.successColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      // Stock status with visible text
+                      Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          if (!isActive)
+                            const Text(
+                              'مؤرشف',
+                              style: TextStyle(
+                                color: Colors.brown,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          Text(
+                            '$stockIcon $stockStatus',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: quantity <= 0
+                                  ? const Color(0xFFD32F2F)
+                                  : isLowStock
+                                  ? const Color(0xFFD32F2F)
+                                  : const Color(0xFF388E3C),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      // Quantity and min quantity
+                      Row(
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'الكمية: $quantityText ${storageUnit != saleUnit ? '$storageUnit ($saleUnit)' : saleUnit}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade700,
+                                fontWeight: quantity <= 0
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Text(
+                              'الحد الأدنى: $minQuantityText',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
                               ),
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    // Stock status with visible text
-                    Row(
-                      textDirection: TextDirection.rtl,
-                      children: [
-                        Text(
-                          '$stockIcon $stockStatus',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: quantity <= 0
-                                ? const Color(0xFFD32F2F)
-                                : isLowStock
-                                    ? const Color(0xFFD32F2F)
-                                    : const Color(0xFF388E3C),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    // Quantity and min quantity
-                    Row(
-                      textDirection: TextDirection.rtl,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'الكمية: $quantityText ${storageUnit != saleUnit ? '$storageUnit ($saleUnit)' : saleUnit}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade700,
-                              fontWeight: quantity <= 0 ? FontWeight.bold : FontWeight.normal,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            'الحد الأدنى: $minQuantityText',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    // Action buttons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      textDirection: TextDirection.rtl,
-                      children: [
-                        if (onEdit != null)
-                          SizedBox(
-                            width: 28,
-                            height: 28,
-                            child: IconButton(
-                              onPressed: onEdit,
-                              icon: const Icon(
-                                Icons.edit,
-                                color: Colors.blue,
-                                size: 16,
-                              ),
-                              style: IconButton.styleFrom(
-                                backgroundColor: Colors.blue.withValues(alpha: 0.1),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
+                      ),
+                      const SizedBox(height: 4),
+                      // Action buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        textDirection: TextDirection.rtl,
+                        children: [
+                          if (onEdit != null)
+                            SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: IconButton(
+                                onPressed: onEdit,
+                                icon: const Icon(
+                                  Icons.edit,
+                                  color: Colors.blue,
+                                  size: 16,
                                 ),
-                                padding: EdgeInsets.zero,
-                              ),
-                            ),
-                          ),
-                        const SizedBox(width: 5),
-                        if (onDelete != null)
-                          SizedBox(
-                            width: 28,
-                            height: 28,
-                            child: IconButton(
-                              onPressed: onDelete,
-                              icon: const Icon(
-                                Icons.delete,
-                                color: AppStyles.errorColor,
-                                size: 16,
-                              ),
-                              style: IconButton.styleFrom(
-                                backgroundColor: AppStyles.errorColor.withValues(alpha: 0.1),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Colors.blue.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  padding: EdgeInsets.zero,
                                 ),
-                                padding: EdgeInsets.zero,
                               ),
                             ),
-                          ),
-                      ],
-                    ),
+                          const SizedBox(width: 5),
+                          if (onDelete != null)
+                            SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: IconButton(
+                                onPressed: onDelete,
+                                icon: Icon(
+                                  isActive
+                                      ? Icons.archive_outlined
+                                      : Icons.unarchive_outlined,
+                                  color: isActive ? Colors.brown : Colors.green,
+                                  size: 16,
+                                ),
+                                tooltip: isActive ? 'أرشفة' : 'استعادة',
+                                style: IconButton.styleFrom(
+                                  backgroundColor: AppStyles.errorColor
+                                      .withValues(alpha: 0.1),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -316,7 +334,9 @@ class ProductCard extends StatelessWidget {
                           errorBuilder: (_, _, _) => Icon(
                             Icons.inventory_2,
                             size: 36,
-                            color: AppStyles.primaryColor.withValues(alpha: 0.5),
+                            color: AppStyles.primaryColor.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                         )
                       : Icon(

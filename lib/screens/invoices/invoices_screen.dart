@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
@@ -10,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/repositories/invoice_repository.dart';
 import '../../models/invoice_item_model.dart';
 import '../../models/invoice_model.dart';
+import '../../models/customer_model.dart';
+import '../../repositories/customer_repository.dart';
 import '../../models/user_model.dart';
 import '../../utils/quantity_formatter.dart';
 import '../../widgets/draggable_dialog.dart';
@@ -26,6 +29,7 @@ enum InvoiceFilter { all, today, week, month }
 
 class _InvoicesScreenState extends State<InvoicesScreen> {
   final InvoiceRepository _invoiceRepository = InvoiceRepository();
+  final CustomerRepository _customerRepository = CustomerRepository();
   final DraggableDialogController _dialogController =
       DraggableDialogController();
 
@@ -162,11 +166,14 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         first.day == second.day;
   }
 
-  int get _totalInvoices => _invoices.length;
+  List<Invoice> get _postedInvoices =>
+      _invoices.where((invoice) => invoice.status != 'voided').toList();
+
+  int get _totalInvoices => _postedInvoices.length;
 
   double get _todaySales {
     final today = DateTime.now();
-    return _invoices
+    return _postedInvoices
         .where((invoice) {
           final date = DateTime.tryParse(invoice.date);
           return date != null && _sameDay(date, today);
@@ -177,7 +184,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   double get _weekSales {
     final now = DateTime.now();
     final start = now.subtract(const Duration(days: 6));
-    return _invoices
+    return _postedInvoices
         .where((invoice) {
           final date = DateTime.tryParse(invoice.date);
           return date != null && !date.isBefore(start) && !date.isAfter(now);
@@ -187,7 +194,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   double get _monthSales {
     final now = DateTime.now();
-    return _invoices
+    return _postedInvoices
         .where((invoice) {
           final date = DateTime.tryParse(invoice.date);
           return date != null &&
@@ -199,7 +206,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
   int get _todayInvoiceCount {
     final today = DateTime.now();
-    return _invoices.where((invoice) {
+    return _postedInvoices.where((invoice) {
       final date = DateTime.tryParse(invoice.date);
       return date != null && _sameDay(date, today);
     }).length;
@@ -246,6 +253,243 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     return '${_formatDate(date)}   ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _shareInvoicePdf(
+    Invoice invoice,
+    List<InvoiceItem> items,
+  ) async {
+    try {
+      Customer? customer;
+      if (invoice.customerId != null) {
+        customer = await _customerRepository.getCustomerById(
+          invoice.customerId!,
+        );
+      }
+
+      final regularFont = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/tahoma.ttf'),
+      );
+      final boldFont = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/tahomabd.ttf'),
+      );
+
+      final pdf = pw.Document();
+      final paymentMethod = invoice.paymentMethod == 'cash'
+          ? 'نقدي'
+          : invoice.paymentMethod == 'credit'
+              ? 'آجل'
+              : invoice.paymentMethod == 'transfer'
+                  ? 'تحويل'
+                  : invoice.paymentMethod;
+
+      final customerName = customer?.name.trim().isNotEmpty == true
+          ? customer!.name.trim()
+          : 'عميل غير مسجل';
+
+      final safeInvoiceNumber = invoice.invoiceNumber.replaceAll(
+        RegExp(r'[\\/:*?"<>|]'),
+        '_',
+      );
+
+      pw.TextStyle textStyle({
+        double size = 10,
+        bool bold = false,
+        PdfColor? color,
+      }) {
+        return pw.TextStyle(
+          font: bold ? boldFont : regularFont,
+          fontSize: size,
+          color: color,
+        );
+      }
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          textDirection: pw.TextDirection.rtl,
+          theme: pw.ThemeData.withFont(
+            base: regularFont,
+            bold: boldFont,
+          ),
+          build: (pdfContext) => [
+            pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Text(
+                    'فاتورة مبيعات',
+                    textAlign: pw.TextAlign.center,
+                    style: textStyle(size: 20, bold: true),
+                  ),
+                  pw.SizedBox(height: 14),
+                  pw.Text(
+                    'رقم الفاتورة: ${invoice.invoiceNumber}',
+                    style: textStyle(bold: true),
+                  ),
+                  pw.SizedBox(height: 5),
+                  pw.Text(
+                    'التاريخ والوقت: ${_formatDateTime(invoice.date)}',
+                    style: textStyle(),
+                  ),
+                  pw.SizedBox(height: 5),
+                  pw.Text(
+                    'الكاشير / البائع: ${invoice.cashierName?.isNotEmpty == true ? invoice.cashierName! : (invoice.createdByName?.isNotEmpty == true ? invoice.createdByName! : 'غير محدد')}',
+                    style: textStyle(),
+                  ),
+                  pw.SizedBox(height: 5),
+                  pw.Text(
+                    'طريقة الدفع: $paymentMethod',
+                    style: textStyle(),
+                  ),
+                  pw.SizedBox(height: 5),
+                  pw.Text(
+                    'العميل: $customerName',
+                    style: textStyle(bold: true),
+                  ),
+                  if (customer?.phone?.trim().isNotEmpty == true) ...[
+                    pw.SizedBox(height: 5),
+                    pw.Text(
+                      'الهاتف: ${customer!.phone!.trim()}',
+                      style: textStyle(),
+                    ),
+                  ],
+                  if (customer?.address?.trim().isNotEmpty == true) ...[
+                    pw.SizedBox(height: 5),
+                    pw.Text(
+                      'العنوان: ${customer!.address!.trim()}',
+                      style: textStyle(),
+                    ),
+                  ],
+                  pw.SizedBox(height: 18),
+                  pw.Text(
+                    'تفاصيل الأصناف',
+                    style: textStyle(size: 13, bold: true),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Table(
+                    border: pw.TableBorder.all(
+                      color: PdfColors.grey400,
+                      width: 0.5,
+                    ),
+                    columnWidths: {
+                      0: const pw.FlexColumnWidth(3),
+                      1: const pw.FlexColumnWidth(1),
+                      2: const pw.FlexColumnWidth(1),
+                      3: const pw.FlexColumnWidth(1.4),
+                      4: const pw.FlexColumnWidth(1.4),
+                    },
+                    children: [
+                      pw.TableRow(
+                        decoration: const pw.BoxDecoration(
+                          color: PdfColors.grey300,
+                        ),
+                        children: [
+                          'المنتج',
+                          'الكمية',
+                          'الوحدة',
+                          'السعر',
+                          'الإجمالي',
+                        ].map((label) {
+                          return pw.Padding(
+                            padding: const pw.EdgeInsets.all(6),
+                            child: pw.Text(
+                              label,
+                              textAlign: pw.TextAlign.center,
+                              style: textStyle(bold: true),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      ...items.map((item) {
+                        final values = [
+                          item.productName,
+                          formatQuantity(item.quantity),
+                          item.saleUnit,
+                          item.unitPrice.toStringAsFixed(2),
+                          item.total.toStringAsFixed(2),
+                        ];
+                        return pw.TableRow(
+                          children: values.map((value) {
+                            return pw.Padding(
+                              padding: const pw.EdgeInsets.all(6),
+                              child: pw.Text(
+                                value,
+                                textAlign: pw.TextAlign.center,
+                                style: textStyle(),
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      }),
+                    ],
+                  ),
+                  pw.SizedBox(height: 16),
+                  if (invoice.discount > 0) ...[
+                    pw.Text(
+                      'المجموع الفرعي: ${(invoice.total + invoice.discount).toStringAsFixed(2)}',
+                      style: textStyle(),
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Text(
+                      'الخصم: ${invoice.discount.toStringAsFixed(2)}',
+                      style: textStyle(),
+                    ),
+                    pw.SizedBox(height: 5),
+                  ],
+                  pw.Text(
+                    'الإجمالي الكلي: ${invoice.total.toStringAsFixed(2)}',
+                    style: textStyle(size: 14, bold: true),
+                  ),
+                  pw.SizedBox(height: 5),
+                  if (invoice.paymentMethod == 'cash') ...[
+                    pw.Text(
+                      'المدفوع: ${invoice.paidAmount.toStringAsFixed(2)}',
+                      style: textStyle(),
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Text(
+                      'الباقي: ${invoice.changeAmount.toStringAsFixed(2)}',
+                      style: textStyle(),
+                    ),
+                  ],
+                  if (invoice.notes?.trim().isNotEmpty == true) ...[
+                    pw.SizedBox(height: 10),
+                    pw.Text(
+                      'ملاحظات: ${invoice.notes!.trim()}',
+                      style: textStyle(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/invoice_$safeInvoiceNumber.pdf';
+      final pdfFile = File(path);
+      await pdfFile.writeAsBytes(await pdf.save());
+
+      if (!mounted) return;
+
+      final shareResult = await Share.shareXFiles(
+        [XFile(path)],
+        subject: 'فاتورة ${invoice.invoiceNumber}',
+        text: 'فاتورة رقم ${invoice.invoiceNumber}',
+      );
+    debugPrint('INVOICE_SHARE_DEBUG status: ' + shareResult.status.toString());
+    debugPrint('INVOICE_SHARE_DEBUG raw: ' + shareResult.raw);
+    if (shareResult.status == ShareResultStatus.unavailable && Platform.isWindows) {
+      await Process.start('powershell.exe', ['-NoProfile', '-Command', "Start-Process explorer.exe -ArgumentList '/select,\"$path\"'"]);
+    }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر إنشاء أو مشاركة PDF: $error')),
+      );
+    }
+  }
   Future<void> _showDetailsDialog(Invoice invoice) async {
     final items = await _invoiceRepository.getInvoiceItems(invoice.id!);
     if (!mounted) return;
@@ -271,6 +515,20 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('رقم الفاتورة: ${invoice.invoiceNumber}'),
+                      if (invoice.status == 'voided') ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'الحالة: ملغاة${invoice.cancellationReason == null ? '' : ' — ${invoice.cancellationReason}'}',
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (invoice.cancelledAt != null)
+                          Text(
+                            'تاريخ الإلغاء: ${_formatDateTime(invoice.cancelledAt!)}',
+                          ),
+                      ],
                       const SizedBox(height: 8),
                       Text(
                         'الكاشير / البائع: ${invoice.cashierName?.isNotEmpty == true ? invoice.cashierName! : (invoice.createdByName?.isNotEmpty == true ? invoice.createdByName! : 'غير محدد')}',
@@ -280,7 +538,13 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                       Text('التاريخ والوقت: ${_formatDateTime(invoice.date)}'),
                       const SizedBox(height: 8),
                       Text(
-                        'طريقة الدفع: ${invoice.paymentMethod == 'cash' ? 'نقدي' : invoice.paymentMethod == 'credit' ? 'آجل' : invoice.paymentMethod == 'transfer' ? 'تحويل' : invoice.paymentMethod}',
+                        'طريقة الدفع: ${invoice.paymentMethod == 'cash'
+                            ? 'نقدي'
+                            : invoice.paymentMethod == 'credit'
+                            ? 'آجل'
+                            : invoice.paymentMethod == 'transfer'
+                            ? 'تحويل'
+                            : invoice.paymentMethod}',
                       ),
                       const SizedBox(height: 16),
                       const Text(
@@ -355,7 +619,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           children: [
                             if (invoice.discount > 0) ...[
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
                                     'المجموع الفرعي:',
@@ -365,7 +630,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                     ),
                                   ),
                                   Text(
-                                    (invoice.total + invoice.discount).toStringAsFixed(2),
+                                    (invoice.total + invoice.discount)
+                                        .toStringAsFixed(2),
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,
@@ -376,7 +642,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                               ),
                               const SizedBox(height: 4),
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
                                     'الخصم:',
@@ -430,6 +697,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   child: const Text('إغلاق'),
                 ),
                 ElevatedButton.icon(
+                  icon: const Icon(Icons.picture_as_pdf, size: 18),
+                  label: const Text('مشاركة PDF'),
+                  onPressed: () => _shareInvoicePdf(invoice, items),
+                ),                ElevatedButton.icon(
                   icon: const Icon(Icons.print, size: 18),
                   label: const Text('طباعة الفاتورة'),
                   onPressed: () {
@@ -449,47 +720,72 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     );
   }
 
-  Future<void> _confirmDelete(Invoice invoice) async {
-    final confirmed = await showDialog<bool>(
+  Future<String?> _requestCancellationReason(Invoice invoice) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          'تأكيد الحذف',
-          style: TextStyle(fontWeight: FontWeight.bold),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('إلغاء الفاتورة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('سيتم حفظ الفاتورة ${invoice.invoiceNumber} بحالة ملغاة.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'سبب الإلغاء',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setDialogState(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('رجوع'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: controller.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('تأكيد الإلغاء'),
+            ),
+          ],
         ),
-        content: Text('هل تريد حذف الفاتورة رقم ${invoice.invoiceNumber}؟'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('حذف'),
-          ),
-        ],
       ),
     );
+    controller.dispose();
+    return reason;
+  }
 
-    if (confirmed != true || invoice.id == null) return;
+  Future<void> _cancelInvoice(Invoice invoice) async {
+    if (invoice.status == 'voided' || invoice.id == null) return;
+    final reason = await _requestCancellationReason(invoice);
+    if (reason == null) return;
 
     try {
-      await _invoiceRepository.deleteInvoiceWithEffects(invoice.id!);
+      await _invoiceRepository.cancelInvoice(invoice.id!, reason: reason);
 
       if (!mounted) return;
       await _loadInvoices();
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('تم الحذف بنجاح')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إلغاء الفاتورة مع الاحتفاظ بها')),
+        );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('خطأ في حذف الفاتورة: $e')));
+      ).showSnackBar(SnackBar(content: Text('تعذر إلغاء الفاتورة: $e')));
     }
   }
 
@@ -497,7 +793,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
     try {
       final invoices = _filteredInvoices;
       print('DEBUG: Found ${invoices.length} invoices to export');
-      
+
       if (invoices.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -512,7 +808,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
 
       // Debug: Print first invoice data
       if (invoices.isNotEmpty) {
-        print('DEBUG: First invoice - Number: ${invoices[0].invoiceNumber}, Total: ${invoices[0].total}');
+        print(
+          'DEBUG: First invoice - Number: ${invoices[0].invoiceNumber}, Total: ${invoices[0].total}',
+        );
       }
 
       // Show loading indicator
@@ -529,9 +827,12 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
       final pdf = pw.Document();
 
       // Calculate totals
-      final totalAmount = invoices.fold<double>(0.0, (sum, invoice) => sum + invoice.total);
+      final totalAmount = invoices
+          .where((invoice) => invoice.status != 'voided')
+          .fold<double>(0.0, (sum, invoice) => sum + invoice.total);
       final currentDate = DateTime.now();
-      final formattedDate = '${currentDate.year}-${currentDate.month.toString().padLeft(2, '0')}-${currentDate.day.toString().padLeft(2, '0')}';
+      final formattedDate =
+          '${currentDate.year}-${currentDate.month.toString().padLeft(2, '0')}-${currentDate.day.toString().padLeft(2, '0')}';
 
       print('DEBUG: Total amount: $totalAmount');
 
@@ -579,14 +880,18 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                     children: [
                       // Header row
                       pw.TableRow(
-                        decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                        decoration: const pw.BoxDecoration(
+                          color: PdfColors.grey200,
+                        ),
                         children: [
                           pw.Padding(
                             padding: const pw.EdgeInsets.all(8),
                             child: pw.Center(
                               child: pw.Text(
                                 'Invoice #',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -595,7 +900,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             child: pw.Center(
                               child: pw.Text(
                                 'Date',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -604,7 +911,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             child: pw.Center(
                               child: pw.Text(
                                 'Customer',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -613,7 +922,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             child: pw.Center(
                               child: pw.Text(
                                 'Total',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -622,7 +933,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             child: pw.Center(
                               child: pw.Text(
                                 'Payment',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -631,7 +944,9 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             child: pw.Center(
                               child: pw.Text(
                                 'Cashier',
-                                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                                style: pw.TextStyle(
+                                  fontWeight: pw.FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -644,7 +959,11 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             pw.Padding(
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Center(
-                                child: pw.Text(invoice.invoiceNumber),
+                                child: pw.Text(
+                                  invoice.status == 'voided'
+                                      ? '${invoice.invoiceNumber} • VOIDED'
+                                      : invoice.invoiceNumber,
+                                ),
                               ),
                             ),
                             pw.Padding(
@@ -655,20 +974,28 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                             ),
                             pw.Padding(
                               padding: const pw.EdgeInsets.all(8),
+                              child: pw.Center(child: pw.Text('Cash')),
+                            ),
+                            pw.Padding(
+                              padding: const pw.EdgeInsets.all(8),
                               child: pw.Center(
-                                child: pw.Text('Cash'),
+                                child: pw.Text(
+                                  invoice.total.toStringAsFixed(2),
+                                ),
                               ),
                             ),
                             pw.Padding(
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Center(
-                                child: pw.Text(invoice.total.toStringAsFixed(2)),
-                              ),
-                            ),
-                            pw.Padding(
-                              padding: const pw.EdgeInsets.all(8),
-                              child: pw.Center(
-                                child: pw.Text(invoice.paymentMethod == 'cash' ? 'Cash' : invoice.paymentMethod == 'credit' ? 'Credit' : invoice.paymentMethod == 'transfer' ? 'Transfer' : invoice.paymentMethod),
+                                child: pw.Text(
+                                  invoice.paymentMethod == 'cash'
+                                      ? 'Cash'
+                                      : invoice.paymentMethod == 'credit'
+                                      ? 'Credit'
+                                      : invoice.paymentMethod == 'transfer'
+                                      ? 'Transfer'
+                                      : invoice.paymentMethod,
+                                ),
                               ),
                             ),
                             pw.Padding(
@@ -677,9 +1004,10 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                                 child: pw.Text(
                                   invoice.cashierName?.isNotEmpty == true
                                       ? invoice.cashierName!
-                                      : (invoice.createdByName?.isNotEmpty == true
-                                          ? invoice.createdByName!
-                                          : 'N/A'),
+                                      : (invoice.createdByName?.isNotEmpty ==
+                                                true
+                                            ? invoice.createdByName!
+                                            : 'N/A'),
                                 ),
                               ),
                             ),
@@ -1038,14 +1366,23 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
               );
               return DataRow(
                 cells: [
-                  DataCell(Text(invoice.invoiceNumber)),
+                  DataCell(
+                    Text(
+                      invoice.status == 'voided'
+                          ? '${invoice.invoiceNumber} • ملغاة'
+                          : invoice.invoiceNumber,
+                      style: TextStyle(
+                        color: invoice.status == 'voided' ? Colors.red : null,
+                      ),
+                    ),
+                  ),
                   DataCell(
                     Text(
                       invoice.cashierName?.isNotEmpty == true
                           ? invoice.cashierName!
                           : (invoice.createdByName?.isNotEmpty == true
-                              ? invoice.createdByName!
-                              : '-'),
+                                ? invoice.createdByName!
+                                : '-'),
                       style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
                   ),
@@ -1090,25 +1427,30 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                           tooltip: 'عرض التفاصيل',
                           onPressed: () => _showDetailsDialog(invoice),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.print, color: Colors.indigo),
-                          tooltip: 'طباعة الإيصال الحراري',
-                          onPressed: () async {
-                            final items = await _invoiceRepository
-                                .getInvoiceItems(invoice.id!);
-                            if (!mounted) return;
-                            ThermalReceiptDialog.show(
-                              context,
-                              invoice: invoice,
-                              items: items,
-                            );
-                          },
-                        ),
-                        if (_currentUserRole == UserRole.admin)
+                        if (invoice.status != 'voided')
                           IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            tooltip: 'حذف الفاتورة',
-                            onPressed: () => _confirmDelete(invoice),
+                            icon: const Icon(Icons.print, color: Colors.indigo),
+                            tooltip: 'طباعة الإيصال الحراري',
+                            onPressed: () async {
+                              final items = await _invoiceRepository
+                                  .getInvoiceItems(invoice.id!);
+                              if (!mounted) return;
+                              ThermalReceiptDialog.show(
+                                context,
+                                invoice: invoice,
+                                items: items,
+                              );
+                            },
+                          ),
+                        if (_currentUserRole == UserRole.admin &&
+                            invoice.status != 'voided')
+                          IconButton(
+                            icon: const Icon(
+                              Icons.cancel_outlined,
+                              color: Colors.red,
+                            ),
+                            tooltip: 'إلغاء الفاتورة',
+                            onPressed: () => _cancelInvoice(invoice),
                           ),
                       ],
                     ),
@@ -1137,8 +1479,8 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         final sellerName = invoice.cashierName?.isNotEmpty == true
             ? invoice.cashierName!
             : (invoice.createdByName?.isNotEmpty == true
-                ? invoice.createdByName!
-                : null);
+                  ? invoice.createdByName!
+                  : null);
 
         return Card(
           child: Padding(
@@ -1150,7 +1492,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'الفاتورة ${invoice.invoiceNumber}',
+                      'الفاتورة ${invoice.invoiceNumber}${invoice.status == 'voided' ? ' • ملغاة' : ''}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
@@ -1210,26 +1552,30 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
                 const Spacer(),
                 Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.print, color: Colors.indigo),
-                      tooltip: 'طباعة الإيصال الحراري',
-                      onPressed: () async {
-                        final items = await _invoiceRepository.getInvoiceItems(
-                          invoice.id!,
-                        );
-                        if (!mounted) return;
-                        ThermalReceiptDialog.show(
-                          context,
-                          invoice: invoice,
-                          items: items,
-                        );
-                      },
-                    ),
-                    if (_currentUserRole == UserRole.admin)
+                    if (invoice.status != 'voided')
                       IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        tooltip: 'حذف الفاتورة',
-                        onPressed: () => _confirmDelete(invoice),
+                        icon: const Icon(Icons.print, color: Colors.indigo),
+                        tooltip: 'طباعة الإيصال الحراري',
+                        onPressed: () async {
+                          final items = await _invoiceRepository
+                              .getInvoiceItems(invoice.id!);
+                          if (!mounted) return;
+                          ThermalReceiptDialog.show(
+                            context,
+                            invoice: invoice,
+                            items: items,
+                          );
+                        },
+                      ),
+                    if (_currentUserRole == UserRole.admin &&
+                        invoice.status != 'voided')
+                      IconButton(
+                        icon: const Icon(
+                          Icons.cancel_outlined,
+                          color: Colors.red,
+                        ),
+                        tooltip: 'إلغاء الفاتورة',
+                        onPressed: () => _cancelInvoice(invoice),
                       ),
                     const Spacer(),
                     ElevatedButton.icon(

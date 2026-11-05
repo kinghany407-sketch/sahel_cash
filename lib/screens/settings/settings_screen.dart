@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
@@ -28,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Language Settings
   String _selectedLanguage = 'ar'; // ar or en
+  bool _isBackupRestoreInProgress = false;
 
   @override
   void initState() {
@@ -84,11 +84,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _createBackup() async {
+    if (_isBackupRestoreInProgress) return;
+    setState(() => _isBackupRestoreInProgress = true);
     try {
-      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .replaceAll('.', '-');
       final defaultFileName = 'sahel_cash_backup_$timestamp.db';
 
-      // Use file picker to save location
       final result = await FilePicker.platform.saveFile(
         dialogTitle: 'اختر مكان حفظ النسخة الاحتياطية',
         fileName: defaultFileName,
@@ -96,112 +100,111 @@ class _SettingsScreenState extends State<SettingsScreen> {
         allowedExtensions: ['db'],
       );
 
-      if (result != null) {
-        // Copy database file to selected location
-        final db = DatabaseHelper.instance;
-        final dbPath = await db.getDatabasePath();
-        final dbFile = File(dbPath);
-
-        if (await dbFile.exists()) {
-          await dbFile.copy(result);
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('تم إنشاء النسخة الاحتياطية بنجاح'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('لم يتم العثور على ملف قاعدة البيانات'),
-                backgroundColor: AppStyles.errorColor,
-              ),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('خطأ في إنشاء النسخة الاحتياطية: $e'),
-            backgroundColor: AppStyles.errorColor,
-          ),
+      if (result == null || result.isEmpty) {
+        _showBackupRestoreMessage(
+          'تم إلغاء النسخ الاحتياطي',
+          isCancellation: true,
         );
+        return;
       }
+
+      final backupPath = await DatabaseHelper.instance.backupDatabase(
+        destinationPath: result,
+      );
+      _showBackupRestoreMessage('تم إنشاء نسخة احتياطية سليمة في: $backupPath');
+    } catch (e) {
+      _showBackupRestoreMessage(
+        'فشل إنشاء النسخة الاحتياطية: $e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isBackupRestoreInProgress = false);
     }
   }
 
   Future<void> _restoreBackup() async {
+    if (_isBackupRestoreInProgress) return;
+    setState(() => _isBackupRestoreInProgress = true);
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['db'],
       );
 
-      if (result != null && result.files.single.path != null) {
-        final backupPath = result.files.single.path!;
-        final backupFile = File(backupPath);
-
-        if (await backupFile.exists()) {
-          // Confirm restore
-          final confirm = await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              title: const Text('تأكيد الاستعادة'),
-              content: const Text('سيتم استبدال قاعدة البيانات الحالية بالنسخة الاحتياطية. هل أنت متأكد؟'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('إلغاء'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text('استعادة'),
-                ),
-              ],
-            ),
-          );
-
-          if (confirm == true) {
-            final db = DatabaseHelper.instance;
-            final dbPath = await db.getDatabasePath();
-
-            // Close database connection
-            await db.close();
-
-            // Replace database file
-            await backupFile.copy(dbPath);
-
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('تم استعادة النسخة الاحتياطية بنجاح. يرجى إعادة تشغيل التطبيق.'),
-                  backgroundColor: Colors.green,
-                  duration: Duration(seconds: 5),
-                ),
-              );
-            }
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('خطأ في استعادة النسخة الاحتياطية: $e'),
-            backgroundColor: AppStyles.errorColor,
-          ),
+      if (result == null ||
+          result.files.isEmpty ||
+          result.files.single.path == null) {
+        _showBackupRestoreMessage(
+          'تم إلغاء اختيار النسخة الاحتياطية',
+          isCancellation: true,
         );
+        return;
       }
+
+      if (!mounted) return;
+      final confirm = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('تأكيد الاستعادة'),
+          content: const Text(
+            'سيتم استبدال قاعدة البيانات الحالية. سيجري التحقق من النسخة '
+            'وحفظ نسخة أمان من البيانات الحالية قبل الاستبدال. هل تريد المتابعة؟',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('استعادة'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) {
+        _showBackupRestoreMessage('تم إلغاء الاستعادة', isCancellation: true);
+        return;
+      }
+
+      if (!mounted) return;
+      final safetyPath = await DatabaseHelper.instance.restoreDatabase(
+        result.files.single.path!,
+      );
+      _showBackupRestoreMessage(
+        'تمت الاستعادة والتحقق بنجاح. نسخة الأمان محفوظة في: $safetyPath. '
+        'يرجى إعادة تشغيل التطبيق.',
+      );
+    } catch (e) {
+      _showBackupRestoreMessage(
+        'فشلت استعادة النسخة الاحتياطية: $e',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isBackupRestoreInProgress = false);
     }
+  }
+
+  void _showBackupRestoreMessage(
+    String message, {
+    bool isError = false,
+    bool isCancellation = false,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError
+            ? AppStyles.errorColor
+            : isCancellation
+            ? Colors.blueGrey
+            : Colors.green,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   @override
@@ -439,7 +442,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: _createBackup,
+                        onPressed: _isBackupRestoreInProgress
+                            ? null
+                            : _createBackup,
                         icon: const Icon(Icons.cloud_upload, size: 18),
                         label: const Text('نسخ احتياطي الآن'),
                         style: ElevatedButton.styleFrom(
@@ -452,7 +457,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _restoreBackup,
+                        onPressed: _isBackupRestoreInProgress
+                            ? null
+                            : _restoreBackup,
                         icon: const Icon(Icons.cloud_download, size: 18),
                         label: const Text('استعادة نسخة احتياطية'),
                         style: OutlinedButton.styleFrom(

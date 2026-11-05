@@ -14,6 +14,8 @@ import '../../models/purchase_invoice_model.dart';
 import '../../repositories/expense_repository.dart';
 import '../../repositories/product_repository.dart';
 import '../../repositories/purchase_invoice_repository.dart';
+import '../../utils/product_cost_calculator.dart';
+import '../../utils/sales_cost_summary.dart';
 import '../../utils/quantity_formatter.dart';
 import '../../widgets/draggable_dialog.dart';
 import '../products/app_styles.dart';
@@ -31,12 +33,12 @@ enum ProfitPeriod {
 
 class InvoiceItemProfitData {
   final InvoiceItem item;
-  final double quantityInStorage;
-  final double costPerStorageUnit;
-  final double totalCost;
+  final double? quantityInStorage;
+  final double? costPerStorageUnit;
+  final double? totalCost;
   final double revenue;
-  final double profit;
-  final double profitMargin;
+  final double? profit;
+  final double? profitMargin;
 
   InvoiceItemProfitData({
     required this.item,
@@ -52,9 +54,9 @@ class InvoiceItemProfitData {
 class InvoiceProfitData {
   final Invoice invoice;
   final double revenue;
-  final double cost;
-  final double profit;
-  final double profitMargin;
+  final double? cost;
+  final double? profit;
+  final double? profitMargin;
   final List<InvoiceItemProfitData> items;
 
   InvoiceProfitData({
@@ -71,10 +73,10 @@ class ProductProfitData {
   final int productId;
   final String productName;
   final String storageUnit;
-  double totalQuantityInStorage;
+  double? totalQuantityInStorage;
   double totalRevenue;
-  double totalCost;
-  double totalProfit;
+  double? totalCost;
+  double? totalProfit;
   int ordersCount;
 
   ProductProfitData({
@@ -88,8 +90,22 @@ class ProductProfitData {
     this.ordersCount = 0,
   });
 
-  double get profitMargin =>
-      totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0.0;
+  double? get profitMargin => totalProfit == null
+      ? null
+      : totalRevenue > 0
+      ? (totalProfit! / totalRevenue) * 100
+      : 0.0;
+
+  void addCostAndProfit(double? cost, double revenue) {
+    if (cost == null || totalCost == null || totalProfit == null) {
+      totalCost = null;
+      totalProfit = null;
+      return;
+    }
+
+    totalCost = totalCost! + cost;
+    totalProfit = totalProfit! + revenue - cost;
+  }
 }
 
 class ProfitsScreen extends StatefulWidget {
@@ -129,12 +145,13 @@ class _ProfitsScreenState extends State<ProfitsScreen>
 
   // Financial summary
   double _totalRevenue = 0.0;
-  double _totalCost = 0.0;
-  double _grossProfit = 0.0;
-  double _grossMargin = 0.0;
+  double? _totalCost = 0.0;
+  int _unknownCostCount = 0;
+  double? _grossProfit = 0.0;
+  double? _grossMargin = 0.0;
   double _totalExpenses = 0.0;
-  double _netProfit = 0.0;
-  double _netMargin = 0.0;
+  double? _netProfit = 0.0;
+  double? _netMargin = 0.0;
   double _totalPurchasesAmount = 0.0;
   double _netCashFlow = 0.0;
 
@@ -168,11 +185,23 @@ class _ProfitsScreenState extends State<ProfitsScreen>
       case ProfitPeriod.yesterday:
         final yesterday = now.subtract(const Duration(days: 1));
         start = DateTime(yesterday.year, yesterday.month, yesterday.day);
-        end = DateTime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59, 999);
+        end = DateTime(
+          yesterday.year,
+          yesterday.month,
+          yesterday.day,
+          23,
+          59,
+          59,
+          999,
+        );
         break;
       case ProfitPeriod.last7Days:
         final sevenDaysAgo = now.subtract(const Duration(days: 6));
-        start = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day);
+        start = DateTime(
+          sevenDaysAgo.year,
+          sevenDaysAgo.month,
+          sevenDaysAgo.day,
+        );
         break;
       case ProfitPeriod.thisMonth:
         start = DateTime(now.year, now.month, 1);
@@ -181,7 +210,15 @@ class _ProfitsScreenState extends State<ProfitsScreen>
         final prevMonth = DateTime(now.year, now.month - 1, 1);
         start = DateTime(prevMonth.year, prevMonth.month, 1);
         final lastDayOfPrevMonth = DateTime(now.year, now.month, 0);
-        end = DateTime(lastDayOfPrevMonth.year, lastDayOfPrevMonth.month, lastDayOfPrevMonth.day, 23, 59, 59, 999);
+        end = DateTime(
+          lastDayOfPrevMonth.year,
+          lastDayOfPrevMonth.month,
+          lastDayOfPrevMonth.day,
+          23,
+          59,
+          59,
+          999,
+        );
         break;
       case ProfitPeriod.thisYear:
         start = DateTime(now.year, 1, 1);
@@ -225,7 +262,10 @@ class _ProfitsScreenState extends State<ProfitsScreen>
       final db = await DatabaseHelper.instance.database;
 
       // 1. Fetch Invoices
-      final invoices = await _invoiceRepository.getAllInvoices(limit: 100000);
+      final invoices = await _invoiceRepository.getAllInvoices(
+        limit: 100000,
+        includeVoided: false,
+      );
 
       // 2. Fetch all invoice items
       final itemsMaps = await db.query('invoice_items');
@@ -255,7 +295,9 @@ class _ProfitsScreenState extends State<ProfitsScreen>
       final expenses = await _expenseRepository.getAllExpenses();
 
       // 6. Fetch purchases
-      final purchases = await _purchaseRepository.getAllPurchaseInvoices();
+      final purchases = await _purchaseRepository.getAllPurchaseInvoices(
+        includeVoided: false,
+      );
 
       if (!mounted) return;
       setState(() {
@@ -288,14 +330,54 @@ class _ProfitsScreenState extends State<ProfitsScreen>
     if (sub == sup || sub.isEmpty || sup.isEmpty) return false;
 
     const smallUnits = [
-      'قطعة', 'قطعه', 'حبه', 'حبة', 'طبق', 'كوب', 'قرص', 'علبة', 'علبه',
-      'جرام', 'جم', 'piece', 'unit', 'item', 'plate', 'cup', 'gram', 'g'
+      'قطعة',
+      'قطعه',
+      'حبه',
+      'حبة',
+      'طبق',
+      'كوب',
+      'قرص',
+      'علبة',
+      'علبه',
+      'جرام',
+      'جم',
+      'piece',
+      'unit',
+      'item',
+      'plate',
+      'cup',
+      'gram',
+      'g',
     ];
     const largeUnits = [
-      'كرتونة', 'كرتونه', 'كرتون', 'لفة', 'لفه', 'عامود', 'عمود', 'باكت',
-      'بكت', 'صندوق', 'شيكارة', 'شكارة', 'شوال', 'دسته', 'دستة', 'طرد',
-      'كيلو', 'كجم', 'box', 'carton', 'pack', 'package', 'bundle', 'roll',
-      'bag', 'sack', 'kg', 'kilo'
+      'كرتونة',
+      'كرتونه',
+      'كرتون',
+      'لفة',
+      'لفه',
+      'عامود',
+      'عمود',
+      'باكت',
+      'بكت',
+      'صندوق',
+      'شيكارة',
+      'شكارة',
+      'شوال',
+      'دسته',
+      'دستة',
+      'طرد',
+      'كيلو',
+      'كجم',
+      'box',
+      'carton',
+      'pack',
+      'package',
+      'bundle',
+      'roll',
+      'bag',
+      'sack',
+      'kg',
+      'kilo',
     ];
 
     final isSmall = smallUnits.any((u) => sub.contains(u));
@@ -303,55 +385,13 @@ class _ProfitsScreenState extends State<ProfitsScreen>
     return isSmall && isLarge;
   }
 
-  double _getCostPerStorageUnit(Product? product) {
-    if (product == null) return 0.0;
-    final buyPrice = product.buyPrice;
-    if (buyPrice <= 0) return 0.0;
+  double? _getCostPerStorageUnit(Product? product) =>
+      ProductCostCalculator.costPerStorageUnit(product, _saleUnitsMap);
 
-    final pUnit = product.purchaseUnit.trim().toLowerCase();
-    final sUnit = product.storageUnit.trim().toLowerCase();
-
-    // If purchase unit and storage unit are the same
-    if (pUnit == sUnit || pUnit.isEmpty || sUnit.isEmpty) {
-      return buyPrice;
-    }
-
-    // Weight conversions: Kilo vs Gram
-    if ((pUnit.contains('كيلو') || pUnit.contains('kg')) &&
-        (sUnit.contains('جرام') || sUnit.contains('gram'))) {
-      return buyPrice / 1000.0;
-    }
-    if ((pUnit.contains('جرام') || pUnit.contains('gram')) &&
-        (sUnit.contains('كيلو') || sUnit.contains('kg'))) {
-      return buyPrice * 1000.0;
-    }
-
-    // Purchase unit contains multiple storage units (e.g. 1 عامود/كرتونة = 100 قطعة)
-    // Buy price is for 1 purchase unit, so 1 storage unit costs buyPrice / unitsPerPurchaseUnit
-    double factor = product.unitsPerPurchaseUnit > 1
-        ? product.unitsPerPurchaseUnit.toDouble()
-        : (product.conversionFactor > 1.0 ? product.conversionFactor : 1.0);
-
-    // If unitsPerPurchaseUnit is 1, but purchaseUnit is a large package and storageUnit is a small sub-unit
-    if (factor <= 1.0 && _isSubUnit(sUnit, pUnit)) {
-      final key = '${product.id}_$pUnit';
-      final saleUnit = _saleUnitsMap[key];
-      if (saleUnit != null && saleUnit.conversionToStorage > 1.0) {
-        factor = saleUnit.conversionToStorage;
-      }
-    }
-
-    if (factor > 1.0) {
-      return buyPrice / factor;
-    }
-
-    return buyPrice;
-  }
-
-  double _calculateStorageQuantity(
+  double? _calculateStorageQuantity(
     Product? product,
     String saleUnit,
-    double quantity,
+    double quantity,{double? savedConversionToStorage}
   ) {
     if (product == null) return quantity;
     final sUnit = saleUnit.trim().toLowerCase();
@@ -359,56 +399,23 @@ class _ProfitsScreenState extends State<ProfitsScreen>
 
     if (sUnit == pStorage) return quantity;
 
-    // Weight conversions
-    if ((pStorage.contains('كيلو') || pStorage.contains('kg')) &&
-        (sUnit.contains('جرام') || sUnit.contains('gram'))) {
-      return quantity * 0.001;
+    // Use saved conversionToStorage from invoice if available
+    if (savedConversionToStorage != null && savedConversionToStorage > 0) {
+      return quantity * savedConversionToStorage;
     }
 
-    if ((pStorage.contains('جرام') || pStorage.contains('gram')) &&
-        (sUnit.contains('كيلو') || sUnit.contains('kg'))) {
-      return quantity * 1000.0;
-    }
-
-    // Check custom sale units
-    final key = '${product.id}_$sUnit';
-    final customUnit = _saleUnitsMap[key];
-    if (customUnit != null && customUnit.conversionToStorage > 0) {
-      final factor = customUnit.conversionToStorage;
-      // If sale unit is a smaller sub-unit than storage unit (e.g. saleUnit is قطعة and storageUnit is كرتونة/عامود)
-      // and factor > 1 (e.g. 100 pieces per carton), then quantity of pieces should be divided by factor
-      if (_isSubUnit(sUnit, pStorage) && factor > 1.0) {
-        return quantity / factor;
-      }
-      return quantity * factor;
-    }
-
-    // Fallback if not registered in _saleUnitsMap
-    if (sUnit == product.purchaseUnit.trim().toLowerCase()) {
-      final factor = product.unitsPerPurchaseUnit > 1
-          ? product.unitsPerPurchaseUnit.toDouble()
-          : (product.conversionFactor > 1.0 ? product.conversionFactor : 1.0);
-      return quantity * factor;
-    }
-
-    if (_isSubUnit(sUnit, pStorage)) {
-      final factor = product.unitsPerPurchaseUnit > 1
-          ? product.unitsPerPurchaseUnit.toDouble()
-          : (product.conversionFactor > 1.0 ? product.conversionFactor : 1.0);
-      if (factor > 1.0) {
-        return quantity / factor;
-      }
-    }
-
-    return quantity;
+    // If no saved conversionToStorage, return null to indicate incomplete data
+    // Do NOT use fallback from current product settings
+    return null;
   }
 
   void _recalculateProfits() {
-    final filteredInvoices =
-        _allInvoices.where((inv) => _isDateInRange(inv.date)).toList();
+    final filteredInvoices = _allInvoices
+        .where((inv) => _isDateInRange(inv.date))
+        .toList();
 
     double revenueSum = 0.0;
-    double costSum = 0.0;
+    final costSummary = SalesCostSummary();
 
     final List<InvoiceProfitData> invoiceProfits = [];
     final Map<int, ProductProfitData> productProfitMap = {};
@@ -416,32 +423,40 @@ class _ProfitsScreenState extends State<ProfitsScreen>
     for (final inv in filteredInvoices) {
       final items = _itemsByInvoiceId[inv.id] ?? [];
       double invRevenue = inv.total;
-      double invCost = 0.0;
+      final invoiceCostSummary = SalesCostSummary();
+      if (items.isEmpty) {
+        costSummary.addCost(null);
+        invoiceCostSummary.addCost(null);
+      }
       final List<InvoiceItemProfitData> itemProfits = [];
 
       for (final item in items) {
         final product = _productsMap[item.productId];
         final costPerStorage = _getCostPerStorageUnit(product);
-        final storageQty =
-            _calculateStorageQuantity(product, item.saleUnit, item.quantity);
-        double itemCost = storageQty * costPerStorage;
+        final storageQty = _calculateStorageQuantity(
+          product,
+          item.saleUnit,
+          item.quantity,
+          savedConversionToStorage: item.conversionToStorage,
+        );
+        var itemCost = ProductCostCalculator.itemCost(
+          product,
+          item.saleUnit,
+          item.quantity,
+          _saleUnitsMap,
+          savedConversionToStorage: item.conversionToStorage,
+        );
         final itemRevenue = item.total;
 
-        // Additional safeguard against inflated cost due to missing or inverted unit metadata
-        // E.g. selling 5 pieces for 66.25 LE where cost was accidentally 4770 LE
-        if (itemRevenue > 0 && itemCost > itemRevenue * 3.0 && product != null) {
-          final factor = product.unitsPerPurchaseUnit > 1
-              ? product.unitsPerPurchaseUnit.toDouble()
-              : (product.conversionFactor > 1.0 ? product.conversionFactor : 1.0);
-          if (factor > 1.0 && (itemCost / factor) <= itemRevenue * 2.0) {
-            itemCost = itemCost / factor;
-          }
-        }
+        final itemProfit = itemCost == null ? null : itemRevenue - itemCost;
+        final itemMargin = itemProfit == null
+            ? null
+            : itemRevenue > 0
+            ? (itemProfit / itemRevenue) * 100
+            : 0.0;
 
-        final itemProfit = itemRevenue - itemCost;
-        final itemMargin =
-            itemRevenue > 0 ? (itemProfit / itemRevenue) * 100 : 0.0;
-
+        costSummary.addCost(itemCost);
+        invoiceCostSummary.addCost(itemCost);
         itemProfits.add(
           InvoiceItemProfitData(
             item: item,
@@ -454,36 +469,40 @@ class _ProfitsScreenState extends State<ProfitsScreen>
           ),
         );
 
-        invCost += itemCost;
-
         // Aggregate product stats
         final pData = productProfitMap.putIfAbsent(
           item.productId,
           () => ProductProfitData(
             productId: item.productId,
             productName: item.productName,
-            storageUnit: product?.storageUnit ?? 'قطعة',
+            storageUnit: product?.storageUnit ?? 'وحدة غير معروفة',
           ),
         );
-        pData.totalQuantityInStorage += storageQty;
+        if (storageQty == null) {
+          pData.totalQuantityInStorage = null;
+        } else if (pData.totalQuantityInStorage != null) {
+          pData.totalQuantityInStorage = pData.totalQuantityInStorage! + storageQty;
+        }
         pData.totalRevenue += itemRevenue;
-        pData.totalCost += itemCost;
-        pData.totalProfit += itemProfit;
+        pData.addCostAndProfit(itemCost, itemRevenue);
         pData.ordersCount += 1;
       }
 
       revenueSum += invRevenue;
-      costSum += invCost;
 
-      final invProfit = invRevenue - invCost;
-      final invMargin =
-          invRevenue > 0 ? (invProfit / invRevenue) * 100 : 0.0;
+      final invoiceCost = invoiceCostSummary.totalCost;
+      final invProfit = invoiceCostSummary.profitFor(invRevenue);
+      final invMargin = invProfit == null
+          ? null
+          : invRevenue > 0
+          ? (invProfit / invRevenue) * 100
+          : 0.0;
 
       invoiceProfits.add(
         InvoiceProfitData(
           invoice: inv,
           revenue: invRevenue,
-          cost: invCost,
+          cost: invoiceCost,
           profit: invProfit,
           profitMargin: invMargin,
           items: itemProfits,
@@ -492,27 +511,37 @@ class _ProfitsScreenState extends State<ProfitsScreen>
     }
 
     // Filter expenses
-    final filteredExp =
-        _allExpenses.where((exp) => _isDateInRange(exp.date)).toList();
-    final expSum =
-        filteredExp.fold(0.0, (sum, exp) => sum + exp.amount);
+    final filteredExp = _allExpenses
+        .where((exp) => _isDateInRange(exp.date))
+        .toList();
+    final expSum = filteredExp.fold(0.0, (sum, exp) => sum + exp.amount);
 
     // Filter purchases
-    final filteredPurch =
-        _allPurchases.where((p) => _isDateInRange(p.date)).toList();
-    final purchSum =
-        filteredPurch.fold(0.0, (sum, p) => sum + p.totalAmount);
+    final filteredPurch = _allPurchases
+        .where((p) => _isDateInRange(p.date))
+        .toList();
+    final purchSum = filteredPurch.fold(0.0, (sum, p) => sum + p.totalAmount);
 
-    final grossProfit = revenueSum - costSum;
-    final grossMargin =
-        revenueSum > 0 ? (grossProfit / revenueSum) * 100 : 0.0;
-    final netProfit = grossProfit - expSum;
-    final netMargin =
-        revenueSum > 0 ? (netProfit / revenueSum) * 100 : 0.0;
+    final grossProfit = costSummary.profitFor(revenueSum);
+    final grossMargin = grossProfit == null
+        ? null
+        : revenueSum > 0
+        ? (grossProfit / revenueSum) * 100
+        : 0.0;
+    final netProfit = grossProfit == null ? null : grossProfit - expSum;
+    final netMargin = netProfit == null
+        ? null
+        : revenueSum > 0
+        ? (netProfit / revenueSum) * 100
+        : 0.0;
     final netCashFlow = revenueSum - purchSum - expSum;
 
     final sortedProductProfits = productProfitMap.values.toList()
-      ..sort((a, b) => b.totalProfit.compareTo(a.totalProfit));
+      ..sort((a, b) {
+        if (a.totalProfit == null) return b.totalProfit == null ? 0 : 1;
+        if (b.totalProfit == null) return -1;
+        return b.totalProfit!.compareTo(a.totalProfit!);
+      });
 
     setState(() {
       _filteredInvoiceProfits = invoiceProfits;
@@ -521,7 +550,8 @@ class _ProfitsScreenState extends State<ProfitsScreen>
       _filteredPurchases = filteredPurch;
 
       _totalRevenue = revenueSum;
-      _totalCost = costSum;
+      _totalCost = costSummary.totalCost;
+      _unknownCostCount = costSummary.unknownCostCount;
       _grossProfit = grossProfit;
       _grossMargin = grossMargin;
       _totalExpenses = expSum;
@@ -577,6 +607,18 @@ class _ProfitsScreenState extends State<ProfitsScreen>
   String _formatDate(DateTime date) =>
       '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
 
+  String _formatCost(double? value) {
+    return value == null ? 'غير مكتملة' : '${value.toStringAsFixed(2)} ج.م';
+  }
+
+  String _formatProfit(double? value) {
+    return value == null ? 'غير مكتمل' : '${value.toStringAsFixed(2)} ج.م';
+  }
+
+  String _formatMargin(double? value) {
+    return value == null ? 'غير مكتمل' : '${value.toStringAsFixed(1)}%';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -625,7 +667,11 @@ class _ProfitsScreenState extends State<ProfitsScreen>
             color: AppStyles.primaryColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: const Icon(Icons.attach_money, color: AppStyles.primaryColor, size: 28),
+          child: const Icon(
+            Icons.attach_money,
+            color: AppStyles.primaryColor,
+            size: 28,
+          ),
         ),
         const SizedBox(width: 12),
         const Column(
@@ -739,7 +785,8 @@ class _ProfitsScreenState extends State<ProfitsScreen>
   Widget _buildKpiCards() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cardWidth = (constraints.maxWidth - (AppStyles.spacingSm * 4)) / 5;
+        final cardWidth =
+            (constraints.maxWidth - (AppStyles.spacingSm * 4)) / 5;
         final isNarrow = constraints.maxWidth < 900;
 
         if (isNarrow) {
@@ -760,8 +807,10 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                   Expanded(
                     child: _buildKpiCard(
                       title: 'تكلفة المبيعات (COGS)',
-                      value: '${_totalCost.toStringAsFixed(2)} ج.م',
-                      subtitle: 'تكلفة شراء البضاعة',
+                      value: _formatCost(_totalCost),
+                      subtitle: _totalCost == null
+                          ? 'غير مكتملة ($_unknownCostCount بند)'
+                          : 'تكلفة شراء البضاعة',
                       color: Colors.blueGrey,
                       icon: Icons.shopping_bag_outlined,
                     ),
@@ -774,9 +823,11 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                   Expanded(
                     child: _buildKpiCard(
                       title: 'مجمل الربح',
-                      value: '${_grossProfit.toStringAsFixed(2)} ج.م',
-                      subtitle: 'هامش: ${_grossMargin.toStringAsFixed(1)}%',
-                      color: Colors.teal,
+                      value: _formatProfit(_grossProfit),
+                      subtitle: 'هامش: ${_formatMargin(_grossMargin)}',
+                      color: _grossProfit == null
+                          ? Colors.blueGrey
+                          : Colors.teal,
                       icon: Icons.trending_up,
                     ),
                   ),
@@ -794,10 +845,16 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                   Expanded(
                     child: _buildKpiCard(
                       title: 'صافي الربح الفعلي',
-                      value: '${_netProfit.toStringAsFixed(2)} ج.م',
-                      subtitle: 'هامش: ${_netMargin.toStringAsFixed(1)}%',
-                      color: _netProfit >= 0 ? Colors.green : Colors.red,
-                      icon: _netProfit >= 0
+                      value: _formatProfit(_netProfit),
+                      subtitle: 'هامش: ${_formatMargin(_netMargin)}',
+                      color: _netProfit == null
+                          ? Colors.blueGrey
+                          : _netProfit! >= 0
+                          ? Colors.green
+                          : Colors.red,
+                      icon: _netProfit == null
+                          ? Icons.info_outline
+                          : _netProfit! >= 0
                           ? Icons.check_circle_outline
                           : Icons.error_outline,
                       isHighlighted: true,
@@ -826,8 +883,10 @@ class _ProfitsScreenState extends State<ProfitsScreen>
               width: cardWidth,
               child: _buildKpiCard(
                 title: 'تكلفة المبيعات (COGS)',
-                value: '${_totalCost.toStringAsFixed(2)} ج.م',
-                subtitle: 'تكلفة شراء البضاعة المباعة',
+                value: _formatCost(_totalCost),
+                subtitle: _totalCost == null
+                    ? 'غير مكتملة ($_unknownCostCount بند)'
+                    : 'تكلفة شراء البضاعة المباعة',
                 color: Colors.blueGrey,
                 icon: Icons.shopping_bag_outlined,
               ),
@@ -837,9 +896,9 @@ class _ProfitsScreenState extends State<ProfitsScreen>
               width: cardWidth,
               child: _buildKpiCard(
                 title: 'مجمل الربح التجاري',
-                value: '${_grossProfit.toStringAsFixed(2)} ج.م',
-                subtitle: 'هامش مجمل الربح: ${_grossMargin.toStringAsFixed(1)}%',
-                color: Colors.teal,
+                value: _formatProfit(_grossProfit),
+                subtitle: 'هامش مجمل الربح: ${_formatMargin(_grossMargin)}',
+                color: _grossProfit == null ? Colors.blueGrey : Colors.teal,
                 icon: Icons.trending_up,
               ),
             ),
@@ -859,10 +918,16 @@ class _ProfitsScreenState extends State<ProfitsScreen>
               width: cardWidth,
               child: _buildKpiCard(
                 title: 'صافي الربح الفعلي',
-                value: '${_netProfit.toStringAsFixed(2)} ج.م',
-                subtitle: 'هامش الصافي: ${_netMargin.toStringAsFixed(1)}%',
-                color: _netProfit >= 0 ? Colors.green : Colors.red,
-                icon: _netProfit >= 0
+                value: _formatProfit(_netProfit),
+                subtitle: 'هامش الصافي: ${_formatMargin(_netMargin)}',
+                color: _netProfit == null
+                    ? Colors.blueGrey
+                    : _netProfit! >= 0
+                    ? Colors.green
+                    : Colors.red,
+                icon: _netProfit == null
+                    ? Icons.info_outline
+                    : _netProfit! >= 0
                     ? Icons.check_circle_outline
                     : Icons.error_outline,
                 isHighlighted: true,
@@ -934,10 +999,7 @@ class _ProfitsScreenState extends State<ProfitsScreen>
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -970,7 +1032,10 @@ class _ProfitsScreenState extends State<ProfitsScreen>
           Tab(icon: Icon(Icons.bar_chart), text: 'نظرة عامة والرسوم'),
           Tab(icon: Icon(Icons.receipt_long), text: 'ربحية الفواتير'),
           Tab(icon: Icon(Icons.inventory_2), text: 'ربحية الأصناف'),
-          Tab(icon: Icon(Icons.account_balance_wallet), text: 'المصروفات والتدفق النقدي'),
+          Tab(
+            icon: Icon(Icons.account_balance_wallet),
+            text: 'المصروفات والتدفق النقدي',
+          ),
         ],
       ),
     );
@@ -1008,6 +1073,21 @@ class _ProfitsScreenState extends State<ProfitsScreen>
   }
 
   Widget _buildBarChartCard() {
+    final totalCost = _totalCost;
+    final netProfit = _netProfit;
+    if (totalCost == null || netProfit == null) {
+      return Card(
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'تعذر رسم التكلفة والأرباح لأن تكلفة المبيعات غير مكتملة '
+            '($_unknownCostCount بند).',
+          ),
+        ),
+      );
+    }
+
     return Card(
       color: Colors.white,
       elevation: 1,
@@ -1047,9 +1127,13 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                   : BarChart(
                       BarChartData(
                         alignment: BarChartAlignment.spaceAround,
-                        maxY: math.max(
+                        maxY:
+                            math.max(
                               _totalRevenue,
-                              math.max(_totalCost, math.max(_totalExpenses, _netProfit)),
+                              math.max(
+                                totalCost,
+                                math.max(_totalExpenses, netProfit),
+                              ),
                             ) *
                             1.15,
                         barTouchData: BarTouchData(
@@ -1095,7 +1179,9 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                               getTitlesWidget: (value, meta) {
                                 if (value == 0) return const Text('0');
                                 if (value >= 1000) {
-                                  return Text('${(value / 1000).toStringAsFixed(0)}k');
+                                  return Text(
+                                    '${(value / 1000).toStringAsFixed(0)}k',
+                                  );
                                 }
                                 return Text(value.toStringAsFixed(0));
                               },
@@ -1109,7 +1195,9 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                   padding: EdgeInsets.only(top: 8),
                                   child: Text(
                                     'إجمالي الفترة',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 );
                               },
@@ -1120,13 +1208,13 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                           show: true,
                           drawVerticalLine: false,
                           horizontalInterval: math.max(
-                                1.0,
-                                math.max(
-                                      _totalRevenue,
-                                      math.max(_totalCost, _totalExpenses),
-                                    ) /
-                                    5,
-                              ),
+                            1.0,
+                            math.max(
+                                  _totalRevenue,
+                                  math.max(totalCost, _totalExpenses),
+                                ) /
+                                5,
+                          ),
                         ),
                         borderData: FlBorderData(show: false),
                         barGroups: [
@@ -1140,7 +1228,7 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               BarChartRodData(
-                                toY: _totalCost,
+                                toY: totalCost,
                                 color: Colors.blueGrey,
                                 width: 22,
                                 borderRadius: BorderRadius.circular(4),
@@ -1152,7 +1240,7 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               BarChartRodData(
-                                toY: math.max(0.0, _netProfit),
+                                toY: math.max(0.0, netProfit),
                                 color: Colors.green,
                                 width: 22,
                                 borderRadius: BorderRadius.circular(4),
@@ -1170,10 +1258,24 @@ class _ProfitsScreenState extends State<ProfitsScreen>
   }
 
   Widget _buildPieChartCard() {
+    final totalCost = _totalCost;
+    final netProfit = _netProfit;
+    if (totalCost == null || netProfit == null) {
+      return Card(
+        color: Colors.white,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('تعذر عرض نسب الأرباح لأن تكلفة المبيعات غير مكتملة.'),
+        ),
+      );
+    }
+
     final hasData = _totalRevenue > 0;
-    final costRatio = hasData ? (_totalCost / _totalRevenue) * 100 : 0.0;
+    final costRatio = hasData ? (totalCost / _totalRevenue) * 100 : 0.0;
     final expRatio = hasData ? (_totalExpenses / _totalRevenue) * 100 : 0.0;
-    final profitRatio = hasData ? math.max(0.0, (_netProfit / _totalRevenue) * 100) : 0.0;
+    final profitRatio = hasData
+        ? math.max(0.0, (netProfit / _totalRevenue) * 100)
+        : 0.0;
 
     return Card(
       color: Colors.white,
@@ -1298,14 +1400,15 @@ class _ProfitsScreenState extends State<ProfitsScreen>
             const Divider(),
             _buildSummaryRow(
               'تكلفة البضاعة المباعة (COGS) (-)',
-              '${_totalCost.toStringAsFixed(2)} ج.م',
+              _formatCost(_totalCost),
               Colors.blueGrey,
             ),
             const Divider(),
             _buildSummaryRow(
               'مجمل الربح التجاري (=)',
-              '${_grossProfit.toStringAsFixed(2)} ج.م (هامش ${_grossMargin.toStringAsFixed(1)}%)',
-              Colors.teal,
+              '${_formatProfit(_grossProfit)}'
+                  '${_grossMargin == null ? '' : ' (هامش ${_formatMargin(_grossMargin)})'}',
+              _grossProfit == null ? Colors.blueGrey : Colors.teal,
               isBold: true,
             ),
             const Divider(),
@@ -1317,8 +1420,13 @@ class _ProfitsScreenState extends State<ProfitsScreen>
             const Divider(thickness: 1.5),
             _buildSummaryRow(
               'صافي الربح الفعلي (=)',
-              '${_netProfit.toStringAsFixed(2)} ج.م (هامش ${_netMargin.toStringAsFixed(1)}%)',
-              _netProfit >= 0 ? Colors.green : Colors.red,
+              '${_formatProfit(_netProfit)}'
+                  '${_netMargin == null ? '' : ' (هامش ${_formatMargin(_netMargin)})'}',
+              _netProfit == null
+                  ? Colors.blueGrey
+                  : _netProfit! >= 0
+                  ? Colors.green
+                  : Colors.red,
               isBold: true,
               fontSize: 16,
             ),
@@ -1417,11 +1525,15 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
-                              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                              constraints: BoxConstraints(
+                                minWidth: constraints.maxWidth,
+                              ),
                               child: DataTable(
                                 columnSpacing: 16,
                                 horizontalMargin: 12,
-                                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                                headingRowColor: WidgetStateProperty.all(
+                                  Colors.grey.shade100,
+                                ),
                                 columns: const [
                                   DataColumn(label: Text('رقم الفاتورة')),
                                   DataColumn(label: Text('التاريخ والوقت')),
@@ -1433,29 +1545,53 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                   DataColumn(label: Text('معاينة')),
                                 ],
                                 rows: filtered.map((invData) {
-                                  final isProfitable = invData.profit >= 0;
+                                  final profit = invData.profit;
+                                  final isProfitable =
+                                      profit != null && profit >= 0;
                                   return DataRow(
                                     cells: [
                                       DataCell(
                                         Text(
                                           invData.invoice.invoiceNumber,
-                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
-                                      DataCell(Text(invData.invoice.date.length > 16
-                                          ? invData.invoice.date.substring(0, 16)
-                                          : invData.invoice.date)),
-                                      DataCell(Text(invData.invoice.paymentMethod == 'cash'
-                                          ? 'نقدي'
-                                          : invData.invoice.paymentMethod)),
-                                      DataCell(Text('${invData.revenue.toStringAsFixed(2)} ج.م')),
-                                      DataCell(Text('${invData.cost.toStringAsFixed(2)} ج.م')),
                                       DataCell(
                                         Text(
-                                          '${invData.profit.toStringAsFixed(2)} ج.م',
+                                          invData.invoice.date.length > 16
+                                              ? invData.invoice.date.substring(
+                                                  0,
+                                                  16,
+                                                )
+                                              : invData.invoice.date,
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          invData.invoice.paymentMethod ==
+                                                  'cash'
+                                              ? 'نقدي'
+                                              : invData.invoice.paymentMethod,
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          '${invData.revenue.toStringAsFixed(2)} ج.م',
+                                        ),
+                                      ),
+                                      DataCell(Text(_formatCost(invData.cost))),
+                                      DataCell(
+                                        Text(
+                                          _formatProfit(profit),
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: isProfitable ? Colors.green : Colors.red,
+                                            color: profit == null
+                                                ? Colors.blueGrey
+                                                : isProfitable
+                                                ? Colors.green
+                                                : Colors.red,
                                           ),
                                         ),
                                       ),
@@ -1466,25 +1602,45 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                             vertical: 4,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: isProfitable
-                                                ? Colors.green.withValues(alpha: 0.1)
-                                                : Colors.red.withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(6),
+                                            color: profit == null
+                                                ? Colors.blueGrey.withValues(
+                                                    alpha: 0.1,
+                                                  )
+                                                : isProfitable
+                                                ? Colors.green.withValues(
+                                                    alpha: 0.1,
+                                                  )
+                                                : Colors.red.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                           ),
                                           child: Text(
-                                            '${invData.profitMargin.toStringAsFixed(1)}%',
+                                            _formatMargin(invData.profitMargin),
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              color: isProfitable ? Colors.green : Colors.red,
+                                              color: profit == null
+                                                  ? Colors.blueGrey
+                                                  : isProfitable
+                                                  ? Colors.green
+                                                  : Colors.red,
                                             ),
                                           ),
                                         ),
                                       ),
                                       DataCell(
                                         IconButton(
-                                          icon: const Icon(Icons.info_outline, color: Colors.indigo),
+                                          icon: const Icon(
+                                            Icons.info_outline,
+                                            color: Colors.indigo,
+                                          ),
                                           tooltip: 'تفاصيل الأصناف والربحية',
-                                          onPressed: () => _showInvoiceProfitDetails(invData),
+                                          onPressed: () =>
+                                              _showInvoiceProfitDetails(
+                                                invData,
+                                              ),
                                         ),
                                       ),
                                     ],
@@ -1530,12 +1686,17 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         Text('الإيراد: ${data.revenue.toStringAsFixed(2)} ج.م'),
-                        Text('التكلفة: ${data.cost.toStringAsFixed(2)} ج.م'),
+                        Text('التكلفة: ${_formatCost(data.cost)}'),
                         Text(
-                          'الربح: ${data.profit.toStringAsFixed(2)} ج.م (${data.profitMargin.toStringAsFixed(1)}%)',
+                          'الربح: ${_formatProfit(data.profit)}'
+                          '${data.profitMargin == null ? '' : ' (${_formatMargin(data.profitMargin)})'}',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: data.profit >= 0 ? Colors.green : Colors.red,
+                            color: data.profit == null
+                                ? Colors.blueGrey
+                                : data.profit! >= 0
+                                ? Colors.green
+                                : Colors.red,
                           ),
                         ),
                       ],
@@ -1549,7 +1710,9 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                   const SizedBox(height: 8),
                   Expanded(
                     child: data.items.isEmpty
-                        ? const Center(child: Text('لا توجد بنود مسجلة لهذه الفاتورة'))
+                        ? const Center(
+                            child: Text('لا توجد بنود مسجلة لهذه الفاتورة'),
+                          )
                         : LayoutBuilder(
                             builder: (context, constraints) {
                               return SingleChildScrollView(
@@ -1557,12 +1720,15 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                 child: SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
                                   child: ConstrainedBox(
-                                    constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                                    constraints: BoxConstraints(
+                                      minWidth: constraints.maxWidth,
+                                    ),
                                     child: DataTable(
                                       columnSpacing: 14,
                                       horizontalMargin: 8,
-                                      headingRowColor:
-                                          WidgetStateProperty.all(Colors.grey.shade200),
+                                      headingRowColor: WidgetStateProperty.all(
+                                        Colors.grey.shade200,
+                                      ),
                                       columns: const [
                                         DataColumn(label: Text('الصنف')),
                                         DataColumn(label: Text('الكمية')),
@@ -1572,23 +1738,44 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                         DataColumn(label: Text('الربح')),
                                       ],
                                       rows: data.items.map((it) {
-                                        final isProfit = it.profit >= 0;
-                                        return DataRow(cells: [
-                                          DataCell(Text(it.item.productName)),
-                                          DataCell(Text(formatQuantity(it.item.quantity))),
-                                          DataCell(Text(it.item.saleUnit)),
-                                          DataCell(Text('${it.revenue.toStringAsFixed(2)} ج.م')),
-                                          DataCell(Text('${it.totalCost.toStringAsFixed(2)} ج.م')),
-                                          DataCell(
-                                            Text(
-                                              '${it.profit.toStringAsFixed(2)} ج.م (${it.profitMargin.toStringAsFixed(0)}%)',
-                                              style: TextStyle(
-                                                color: isProfit ? Colors.green : Colors.red,
-                                                fontWeight: FontWeight.bold,
+                                        final profit = it.profit;
+                                        final isProfit =
+                                            profit != null && profit >= 0;
+                                        return DataRow(
+                                          cells: [
+                                            DataCell(Text(it.item.productName)),
+                                            DataCell(
+                                              Text(
+                                                formatQuantity(
+                                                  it.item.quantity,
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                        ]);
+                                            DataCell(Text(it.item.saleUnit)),
+                                            DataCell(
+                                              Text(
+                                                '${it.revenue.toStringAsFixed(2)} ج.م',
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(_formatCost(it.totalCost)),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                '${_formatProfit(profit)}'
+                                                '${it.profitMargin == null ? '' : ' (${it.profitMargin!.toStringAsFixed(0)}%)'}',
+                                                style: TextStyle(
+                                                  color: profit == null
+                                                      ? Colors.blueGrey
+                                                      : isProfit
+                                                      ? Colors.green
+                                                      : Colors.red,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        );
                                       }).toList(),
                                     ),
                                   ),
@@ -1619,7 +1806,9 @@ class _ProfitsScreenState extends State<ProfitsScreen>
   Widget _buildProductsProfitTab() {
     final filtered = _productProfitsList.where((p) {
       if (_productSearchQuery.isEmpty) return true;
-      return p.productName.toLowerCase().contains(_productSearchQuery.toLowerCase());
+      return p.productName.toLowerCase().contains(
+        _productSearchQuery.toLowerCase(),
+      );
     }).toList();
 
     return Card(
@@ -1669,14 +1858,20 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
-                              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                              constraints: BoxConstraints(
+                                minWidth: constraints.maxWidth,
+                              ),
                               child: DataTable(
                                 columnSpacing: 18,
                                 horizontalMargin: 12,
-                                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                                headingRowColor: WidgetStateProperty.all(
+                                  Colors.grey.shade100,
+                                ),
                                 columns: const [
                                   DataColumn(label: Text('اسم الصنف')),
-                                  DataColumn(label: Text('الكمية المباعة (تخزين)')),
+                                  DataColumn(
+                                    label: Text('الكمية المباعة (تخزين)'),
+                                  ),
                                   DataColumn(label: Text('إجمالي المبيعات')),
                                   DataColumn(label: Text('إجمالي التكلفة')),
                                   DataColumn(label: Text('صافي الربح')),
@@ -1684,28 +1879,42 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                   DataColumn(label: Text('عمليات البيع')),
                                 ],
                                 rows: filtered.map((prod) {
-                                  final isProfit = prod.totalProfit >= 0;
+                                  final profit = prod.totalProfit;
+                                  final isProfit =
+                                      profit != null && profit >= 0;
                                   return DataRow(
                                     cells: [
                                       DataCell(
                                         Text(
                                           prod.productName,
-                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
                                       DataCell(
                                         Text(
-                                          '${formatQuantity(prod.totalQuantityInStorage)} ${prod.storageUnit}',
+                                          '${prod.totalQuantityInStorage == null ? 'غير محدد' : formatQuantity(prod.totalQuantityInStorage!)} ${prod.storageUnit}',
                                         ),
                                       ),
-                                      DataCell(Text('${prod.totalRevenue.toStringAsFixed(2)} ج.م')),
-                                      DataCell(Text('${prod.totalCost.toStringAsFixed(2)} ج.م')),
                                       DataCell(
                                         Text(
-                                          '${prod.totalProfit.toStringAsFixed(2)} ج.م',
+                                          '${prod.totalRevenue.toStringAsFixed(2)} ج.م',
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Text(_formatCost(prod.totalCost)),
+                                      ),
+                                      DataCell(
+                                        Text(
+                                          _formatProfit(profit),
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            color: isProfit ? Colors.green : Colors.red,
+                                            color: profit == null
+                                                ? Colors.blueGrey
+                                                : isProfit
+                                                ? Colors.green
+                                                : Colors.red,
                                           ),
                                         ),
                                       ),
@@ -1716,16 +1925,30 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                                             vertical: 4,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: isProfit
-                                                ? Colors.green.withValues(alpha: 0.1)
-                                                : Colors.red.withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(6),
+                                            color: profit == null
+                                                ? Colors.blueGrey.withValues(
+                                                    alpha: 0.1,
+                                                  )
+                                                : isProfit
+                                                ? Colors.green.withValues(
+                                                    alpha: 0.1,
+                                                  )
+                                                : Colors.red.withValues(
+                                                    alpha: 0.1,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                           ),
                                           child: Text(
-                                            '${prod.profitMargin.toStringAsFixed(1)}%',
+                                            _formatMargin(prod.profitMargin),
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              color: isProfit ? Colors.green : Colors.red,
+                                              color: profit == null
+                                                  ? Colors.blueGrey
+                                                  : isProfit
+                                                  ? Colors.green
+                                                  : Colors.red,
                                             ),
                                           ),
                                         ),
@@ -1766,7 +1989,10 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(flex: 3, child: _buildExpensesBreakdownCard(expensesByCategory)),
+                    Expanded(
+                      flex: 3,
+                      child: _buildExpensesBreakdownCard(expensesByCategory),
+                    ),
                     const SizedBox(width: AppStyles.spacingMd),
                     Expanded(flex: 2, child: _buildCashFlowCard()),
                   ],
@@ -1798,11 +2024,18 @@ class _ProfitsScreenState extends State<ProfitsScreen>
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.payments_outlined, color: Colors.deepOrange, size: 20),
+                    Icon(
+                      Icons.payments_outlined,
+                      color: Colors.deepOrange,
+                      size: 20,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       'توزيع المصروفات التشغيلية حسب الفئة',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ],
                 ),
@@ -1819,7 +2052,9 @@ class _ProfitsScreenState extends State<ProfitsScreen>
             if (expensesByCategory.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(24),
-                child: Center(child: Text('لا توجد مصروفات مسجلة في هذه الفترة')),
+                child: Center(
+                  child: Text('لا توجد مصروفات مسجلة في هذه الفترة'),
+                ),
               )
             else
               Table(
@@ -1834,16 +2069,24 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                     children: const [
                       Padding(
                         padding: EdgeInsets.all(8),
-                        child: Text('الفئة', style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: Text(
+                          'الفئة',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                       Padding(
                         padding: EdgeInsets.all(8),
-                        child: Text('المبلغ', style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: Text(
+                          'المبلغ',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                       Padding(
                         padding: EdgeInsets.all(8),
-                        child: Text('النسبة من المصروفات',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: Text(
+                          'النسبة من المصروفات',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ],
                   ),
@@ -1855,7 +2098,10 @@ class _ProfitsScreenState extends State<ProfitsScreen>
                       children: [
                         Padding(
                           padding: const EdgeInsets.all(8),
-                          child: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          child: Text(
+                            entry.key,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         Padding(
                           padding: const EdgeInsets.all(8),
@@ -1888,7 +2134,11 @@ class _ProfitsScreenState extends State<ProfitsScreen>
           children: [
             const Row(
               children: [
-                Icon(Icons.account_balance_wallet, color: Colors.teal, size: 20),
+                Icon(
+                  Icons.account_balance_wallet,
+                  color: Colors.teal,
+                  size: 20,
+                ),
                 SizedBox(width: 8),
                 Text(
                   'تقرير السيولة والتدفق النقدي',
